@@ -368,6 +368,7 @@ func (s *Server) onHytaleLineLocked(line string) {
 		name, uuid := mm[1], strings.ToLower(mm[2])
 		s.players[name] = Player{Name: name, Since: time.Now()}
 		s.playedSinceBackup = true
+		s.m.playtime.kick()
 		if s.meta.HytaleNames == nil {
 			s.meta.HytaleNames = map[string]string{}
 		}
@@ -384,7 +385,7 @@ func (s *Server) onHytaleLineLocked(line string) {
 		if name == "" {
 			name = mm[3]
 		}
-		delete(s.players, name)
+		s.playerLeftLocked(name)
 	case reHytaleNoAuth.MatchString(line):
 		s.message = "Players can't join: the server isn't signed in to Hytale. The owner signs in again under Add server, Hytale, then restarts it."
 	}

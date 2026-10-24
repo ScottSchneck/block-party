@@ -145,7 +145,15 @@ function startStopButton(s) {
     // Someone who may only turn it on can't turn it off.
     return access(s) >= RUN ? el("button", { class: "danger", onclick: action(s.id, "stop"), disabled: s.state === "stopping" }, word("stop")) : null;
   }
-  return el("button", { class: "go", onclick: action(s.id, "start"), disabled: busy }, word("start"));
+  // Outside its hours only the owner can open it (and is asked first).
+  const closed = s.hours && !s.hours.open;
+  if (closed && !me.owner) {
+    return el("button", { class: "go", disabled: true, title: hoursNote(s.hours) }, word("start"));
+  }
+  const start = action(s.id, "start");
+  return el("button", { class: "go", disabled: busy, onclick: closed
+    ? (ev) => { if (confirm(`${s.name} is closed for the night (${hoursNote(s.hours).replace(/^Closed for the night, /, "")}).\n\nStart it anyway? It stays open until it would open anyway, unless you stop it.`)) start(ev); }
+    : start }, word("start"));
 }
 
 function renderServerRow(s) {
@@ -160,7 +168,8 @@ function renderServerRow(s) {
       open ? el("a", { class: "name", href: serverHref(s.id) }, s.name) : el("span", { class: "name" }, s.name),
       s.outside ? el("span", { class: "badge outside", title: "Friends outside the house can join" }, "Friends outside") : null,
       el("div", { class: "sub" }, `port ${s.port}`),
-      s.message ? el("div", { class: "note warn" }, s.message) : null),
+      s.message ? el("div", { class: "note warn" }, s.message) : null,
+      s.hours ? el("div", { class: "note muted" }, hoursNote(s.hours)) : null),
     el("div", {}, stateEl(s)),
     el("div", { class: "cell-muted" }, playingText(s), s.waiting ? el("div", { class: "note warn" }, `${s.waiting} waiting to be let in`) : null),
     el("div", {},
@@ -298,7 +307,7 @@ let ovPlayersKey = ""; // what the Overview player list last showed
 let dashKey = "";      // what the dashboard last showed
 
 function renderDetailHead(s) {
-  const key = JSON.stringify([s.id, s.name, s.state, s.version, s.build, s.updateTo, s.consoles, s.consolesUpdate, s.consolesLive, s.consolesWaiting, s.port, s.message, latestVersion, s.players.length, prefs.style, s.access]);
+  const key = JSON.stringify([s.id, s.name, s.state, s.version, s.build, s.updateTo, s.consoles, s.consolesUpdate, s.consolesLive, s.consolesWaiting, s.port, s.message, latestVersion, s.players.length, prefs.style, s.access, s.hours]);
   if (key === detailKey) return; // unchanged: keep keyboard focus where it is
   detailKey = key;
   $("detail-name").textContent = s.name;
@@ -311,7 +320,8 @@ function renderDetailHead(s) {
           ? el("span", { class: "warn", title: `Geyser doesn't support Minecraft ${s.consolesWaiting} yet; consoles can join once a newer Geyser is out` }, " · consoles after a Geyser update")
           : s.consoles ? el("span", { class: "muted", title: s.consolesLive ? "Consoles, phones and tablets can join now" : "Consoles can join while it's running with console support" }, " · consoles too") : null)
       : el("span", {}, "Bedrock ", el("span", { class: "mono" }, s.version || "…")),
-    el("span", {}, "Port ", el("span", { class: "mono" }, String(s.port))));
+    el("span", {}, "Port ", el("span", { class: "mono" }, String(s.port))),
+    s.hours ? el("span", { class: s.hours.open ? "" : "warn" }, hoursNote(s.hours)) : null);
   $("detail-message").textContent = s.message || "";
   $("detail-message").hidden = !s.message;
   const busy = busyStates.includes(s.state);
@@ -350,7 +360,7 @@ async function refresh() {
         location.hash = "#/"; // the owner changed what this account may do
       } else if (s) {
         renderDetailHead(s);
-        if (tab === "settings") { renderHold(); renderMemory(); renderConsoles(); }
+        if (tab === "settings") { renderHold(); renderMemory(); renderConsoles(); renderHours(); }
         if (tab === "overview") renderOverviewStatus(s);
       } else {
         resetSettings(); // it's gone (a failed import, say): nothing to save
@@ -403,8 +413,8 @@ function route() {
     notifyDirty = false;
   }
   if (next === "joining") next = "help";
-  if (!["servers", "backups", "help", "import", "add", "guide", "people", "outside", "upkeep", "notify", "account", "server", "settings"].includes(next)) next = "servers";
-  if ((["import", "guide", "people", "outside", "upkeep", "notify", "settings"].includes(next) && !me.owner) || (next === "add" && !me.canAdd)) {
+  if (!["servers", "backups", "help", "import", "add", "guide", "people", "outside", "upkeep", "notify", "account", "server", "settings", "playtime"].includes(next)) next = "servers";
+  if ((["import", "guide", "people", "outside", "upkeep", "notify", "settings", "playtime"].includes(next) && !me.owner) || (next === "add" && !me.canAdd)) {
     location.hash = "#/"; // not for this account
     return;
   }
@@ -465,6 +475,7 @@ function route() {
   if (next === "outside") loadOutside(false);
   if (next === "upkeep") loadUpkeep();
   if (next === "notify") loadNotify();
+  if (next === "playtime") { closeKidForm(); loadPlaytime(); }
   if (next === "backups" && me.owner) loadDeleted();
   if (next === "guide") openGuide(1);
   if (next === "help") fillJoinInfo();
@@ -475,7 +486,7 @@ function setView(v) {
   view = v;
   for (const sec of document.querySelectorAll(".view")) sec.hidden = sec.id !== "view-" + v;
   // Pages without their own menu entry light up the one they're reached from.
-  const navKey = { server: "servers", add: "servers", import: "servers", guide: "help", outside: "settings", upkeep: "settings", notify: "settings", people: me.owner ? "people" : "account" }[v] || v;
+  const navKey = { server: "servers", add: "servers", import: "servers", guide: "help", outside: "settings", upkeep: "settings", notify: "settings", playtime: "settings", people: me.owner ? "people" : "account" }[v] || v;
   for (const a of document.querySelectorAll("[data-nav]")) {
     if (a.dataset.nav === navKey) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
   }
@@ -636,7 +647,8 @@ async function playersCall(fn) {
 // clearServerPanes empties what the Players and Overview tabs show, so
 // nothing from one server is left on another's page.
 function clearServerPanes() {
-  for (const id of ["online", "allowlist", "operators", "attempts", "ov-online", "ov-world", "ov-activity"]) $(id).replaceChildren();
+  for (const id of ["online", "allowlist", "operators", "attempts", "played", "ov-online", "ov-world", "ov-activity"]) $(id).replaceChildren();
+  playedFor = "";
   $("attempts-box").hidden = true;
   showPlayersError(null);
   for (const id of ["ov-join", "ov-backups", "ov-outside-text"]) $(id).textContent = "…";
@@ -651,6 +663,22 @@ function clearServerPanes() {
 async function loadPlayers() {
   if (!selected) return;
   await playersCall(() => api(sid() + "/players"));
+  loadPlayed();
+}
+
+// The week's play on this server, looked at once a minute at most.
+let playedFor = "", playedAt = 0;
+async function loadPlayed() {
+  const id = selected;
+  if (playedFor === id && Date.now() - playedAt < 60000) return;
+  playedFor = id; playedAt = Date.now();
+  try {
+    const list = await api(sid() + "/played");
+    if (id !== selected) return;
+    $("played").replaceChildren(...(list.length
+      ? list.map((p) => row(playerLabel(p.name), `${fmtMinutes(p.minutes)} · last played ${whenShort(p.last)}`))
+      : [emptyRow("Nobody has played this week.")]));
+  } catch (_) { playedFor = ""; }
 }
 
 function row(name, detail, ...buttons) {
@@ -831,6 +859,7 @@ async function loadSettings() {
     for (const k of Object.keys(edits)) delete edits[k];
     $("rename-name").value = settingsView.name;
     renderHold();
+    renderHours(true);
     renderMemory();
     renderConsoles();
     renderSettings();
@@ -1206,6 +1235,268 @@ $("plan-form").addEventListener("submit", (ev) => {
   });
 });
 $("backup-now").addEventListener("click", () => backupsCall(() => post(sid() + "/backups")));
+
+// ---- play time ----
+
+// fmtMinutes: 80 → "1 h 20 min".
+function fmtMinutes(n) {
+  n = Math.max(0, Math.round(n || 0));
+  const h = Math.floor(n / 60), m = n % 60;
+  if (!h) return `${m} min`;
+  return m ? `${h} h ${m} min` : `${h} h`;
+}
+
+// fmtClock: "21:00" or a date → "9:00 PM", as this device writes times.
+function fmtClock(v) {
+  const d = typeof v === "string" && /^\d\d:\d\d$/.test(v) ? new Date(`2000-01-01T${v}:00`) : new Date(v);
+  return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
+
+// fmtWhen: when a time is, from now ("9:00 PM", "tomorrow 7:00 AM").
+function fmtWhen(iso) {
+  const d = new Date(iso), now = new Date();
+  const days = Math.round((new Date(d.toDateString()) - new Date(now.toDateString())) / 864e5);
+  if (days <= 0) return fmtClock(d);
+  if (days === 1) return "tomorrow " + fmtClock(d);
+  return d.toLocaleDateString([], { weekday: "long" }) + " " + fmtClock(d);
+}
+
+// hoursNote is a server's hours in a few words.
+function hoursNote(h) {
+  if (h.open) return h.late ? `Open late, until ${fmtWhen(h.closes)}` : `Open until ${fmtWhen(h.closes)}`;
+  return `Closed for the night, opens ${fmtWhen(h.opens)}`;
+}
+
+function spanText(sp) { return `${fmtClock(sp.from)} to ${fmtClock(sp.until)}`; }
+
+// A server's open hours (Settings tab, owner only).
+let hoursDirty = false;
+function renderHours(fresh) {
+  const s = serverList.find((x) => x.id === selected);
+  $("hours-card").hidden = !me.owner || !s;
+  if (!s || !me.owner) return;
+  if (fresh) { hoursDirty = false; $("hours-error").hidden = true; }
+  const h = s.hours;
+  if (!hoursDirty) {
+    const set = h || hoursDefaults;
+    $("hours-on").checked = !!h;
+    $("hours-school-from").value = set.school.from;
+    $("hours-school-until").value = set.school.until;
+    $("hours-weekend-from").value = set.weekend.from;
+    $("hours-weekend-until").value = set.weekend.until;
+  }
+  $("hours-times").classList.toggle("off", !$("hours-on").checked);
+  for (const id of ["hours-school-from", "hours-school-until", "hours-weekend-from", "hours-weekend-until"]) $(id).disabled = !$("hours-on").checked;
+  $("hours-save").hidden = !hoursDirty;
+  $("hours-now").hidden = !h || hoursDirty;
+  if (h) {
+    $("hours-status").replaceChildren(el("b", {}, hoursNote(h) + "."),
+      h.open ? "" : " You can still start it yourself: it then stays open until it would open anyway.");
+    $("hours-late-end").hidden = !h.late;
+    if (!$("hours-late").value) $("hours-late").value = h.late ? new Date(h.late).toTimeString().slice(0, 5) : "";
+  }
+}
+let hoursDefaults = { school: { from: "07:00", until: "21:00" }, weekend: { from: "08:00", until: "22:00" } };
+
+function hoursChanged() {
+  hoursDirty = true;
+  renderHours();
+}
+$("hours-on").addEventListener("change", hoursChanged);
+for (const id of ["hours-school-from", "hours-school-until", "hours-weekend-from", "hours-weekend-until"]) $(id).addEventListener("input", hoursChanged);
+
+async function hoursCall(fn) {
+  const id = selected;
+  $("hours-error").hidden = true;
+  try {
+    await fn();
+    hoursDirty = false;
+    $("hours-late").value = "";
+    await refresh();
+    if (id === selected) renderHours();
+  } catch (err) {
+    if (id !== selected) return;
+    $("hours-error").textContent = err.message;
+    $("hours-error").hidden = false;
+  }
+}
+$("hours-save").addEventListener("click", () => hoursCall(() => post(sid() + "/hours", {
+  on: $("hours-on").checked,
+  school: { from: $("hours-school-from").value, until: $("hours-school-until").value },
+  weekend: { from: $("hours-weekend-from").value, until: $("hours-weekend-until").value },
+})));
+$("hours-late-save").addEventListener("click", () => {
+  if (!$("hours-late").value) { $("hours-late").focus(); return; }
+  hoursCall(() => post(sid() + "/open-late", { until: $("hours-late").value }));
+});
+$("hours-late-end").addEventListener("click", () => hoursCall(() => post(sid() + "/open-late", { until: "" })));
+
+// The Play time page (owner only).
+let playtime = null;
+let kidEditing = null; // the kid being changed, "" for a new one, null when the form is closed
+
+function showPlaytimeError(err) {
+  $("playtime-error").textContent = err ? err.message : "";
+  $("playtime-error").hidden = !err;
+}
+
+async function loadPlaytime() {
+  try {
+    const v = await api("/api/playtime");
+    showPlaytimeError(null);
+    renderPlaytime(v);
+  } catch (err) { showPlaytimeError(err); }
+}
+
+function weekChart(week) {
+  const max = Math.max(60, ...week.map((d) => d.minutes));
+  const today = week.length - 1;
+  return el("div", { class: "week", role: "img", "aria-label": "Minutes played each day this week: " + week.map((d) => `${new Date(d.day + "T12:00").toLocaleDateString([], { weekday: "short" })} ${fmtMinutes(d.minutes)}`).join(", ") },
+    ...week.map((d, i) => el("div", { class: "day" + (i === today ? " today" : ""), title: fmtMinutes(d.minutes) },
+      el("div", { class: "area" },
+        el("small", {}, d.minutes ? fmtMinutes(d.minutes).replace(" min", "m").replace(" h", "h") : ""),
+        el("div", { class: "bar" + (d.minutes ? "" : " none"), style: `height: ${Math.max(2, Math.round(d.minutes / max * 50))}px` })),
+      el("small", {}, i === today ? "Today" : new Date(d.day + "T12:00").toLocaleDateString([], { weekday: "short" })))));
+}
+
+function renderPlaytime(v) {
+  playtime = v;
+  hoursDefaults = v.defaultHours;
+  const kids = v.kids || [];
+  const cards = kids.map((k) => {
+    const limited = k.limit.on || k.hours.on;
+    const rules = [];
+    if (k.limit.on) rules.push(`Daily limit ${fmtMinutes(k.limit.school)} on school days, ${fmtMinutes(k.limit.weekend)} at weekends`);
+    if (k.hours.on) rules.push(`Plays ${spanText(k.hours.school)} Sunday to Thursday, ${spanText(k.hours.weekend)} Friday and Saturday`);
+    let left = null;
+    if (k.left != null) {
+      left = k.left > 0
+        ? el("span", {}, " · ", el("b", {}, fmtMinutes(k.left)), k.why === "bedtime" ? " until bedtime" : " left")
+        : el("span", { class: "warn" }, k.why === "bedtime" ? " · outside their play hours" : " · no time left today");
+    }
+    const extra = (n) => btn(`+${n >= 60 ? n / 60 + " h" : n + " min"}`, () => kidCall(() => post("/api/playtime/kids/extra", { name: k.name, minutes: n })));
+    return el("section", { class: "card kid" },
+      el("h2", {}, k.name, k.playing.length ? el("span", { class: "badge outside" }, "Playing on " + k.playing.join(", ")) : null),
+      el("p", { class: "names" }, k.players.length ? "Plays as " + k.players.join(", ") : "No names yet: edit to add the names they play as."),
+      el("p", { class: "today" }, "Today ", el("b", {}, fmtMinutes(k.today)), " played", left,
+        k.extraToday ? el("span", { class: "muted" }, ` (with ${fmtMinutes(k.extraToday)} extra)`) : null),
+      weekChart(k.week || []),
+      el("p", { class: "rules" }, rules.length ? rules.join(". ") + "." : "No limits: they can play whenever their servers are open."),
+      el("div", { class: "row" },
+        ...(limited ? [el("span", { class: "muted small" }, "More time today:"), extra(15), extra(30), extra(60)] : []),
+        k.extraToday ? btn("Take extra back", () => kidCall(() => post("/api/playtime/kids/extra", { name: k.name, minutes: 0 }))) : null,
+        btn("Edit", () => openKidForm(k))));
+  });
+  $("kids").replaceChildren(...(cards.length ? [el("div", { class: "col" }, ...cards.filter((_, i) => i % 2 === 0)), el("div", { class: "col" }, ...cards.filter((_, i) => i % 2 === 1))]
+    : [el("div", { class: "col" }, el("p", { class: "card muted" }, "No kids yet. Add one to see how long they play, and to set a daily limit or bedtime if you want."))]));
+  $("others").replaceChildren(...((v.others || []).length
+    ? v.others.map((p) => row(playerLabel(p.name), `${fmtMinutes(p.minutes)} on ${(p.servers || []).join(", ")}`,
+      ...(kids.length ? [addToKidSelect(p.name, kids)] : [])))
+    : [emptyRow("Nobody else has played this week.")]));
+  $("server-hours").replaceChildren(...((v.servers || []).length
+    ? v.servers.map((x) => row(x.name, `${spanText(x.hours.school)} Sunday to Thursday, ${spanText(x.hours.weekend)} Friday and Saturday. ${hoursNote(x.hours)}.`,
+      el("a", { class: "button", href: serverHref(x.id, "settings") }, "Change")))
+    : [emptyRow("No server has open hours: they're open any time.")]));
+}
+
+function addToKidSelect(name, kids) {
+  const sel = el("select", { "aria-label": `Add ${name} to a kid`, onchange: () => {
+    const k = kids.find((x) => x.name === sel.value);
+    sel.value = "";
+    if (k) kidCall(() => post("/api/playtime/kids", { old: k.name, kid: { ...k, players: [...k.players, name] } }));
+  } }, el("option", { value: "" }, "Add to…"), ...kids.map((k) => el("option", { value: k.name }, k.name)));
+  return sel;
+}
+
+async function kidCall(fn) {
+  try {
+    const v = await fn();
+    showPlaytimeError(null);
+    if (v) renderPlaytime(v);
+    return true;
+  } catch (err) { showPlaytimeError(err); return false; }
+}
+
+function kidFormState() {
+  const on = (box, ids) => { for (const id of ids) $(id).disabled = !$(box).checked; };
+  on("kid-limit-on", ["kid-limit-school", "kid-limit-weekend"]);
+  on("kid-hours-on", ["kid-school-from", "kid-school-until", "kid-weekend-from", "kid-weekend-until"]);
+  $("kid-limit-times").classList.toggle("off", !$("kid-limit-on").checked);
+  $("kid-hours-times").classList.toggle("off", !$("kid-hours-on").checked);
+}
+$("kid-limit-on").addEventListener("change", kidFormState);
+$("kid-hours-on").addEventListener("change", kidFormState);
+
+function openKidForm(k) {
+  const d = playtime || { defaultHours: hoursDefaults, defaultLimit: { school: 120, weekend: 180 } };
+  kidEditing = k ? k.name : "";
+  $("kid-form-title").textContent = k ? `Change ${k.name}` : "Add a kid";
+  $("kid-name").value = k ? k.name : "";
+  $("kid-players").value = k ? k.players.join("\n") : "";
+  const limit = k ? k.limit : { on: false, ...d.defaultLimit };
+  const hours = k ? k.hours : { on: false, ...d.defaultHours };
+  $("kid-limit-on").checked = !!limit.on;
+  $("kid-limit-school").value = limit.school;
+  $("kid-limit-weekend").value = limit.weekend;
+  $("kid-hours-on").checked = !!hours.on;
+  $("kid-school-from").value = hours.school.from;
+  $("kid-school-until").value = hours.school.until;
+  $("kid-weekend-from").value = hours.weekend.from;
+  $("kid-weekend-until").value = hours.weekend.until;
+  $("kid-delete").hidden = !k;
+  $("kid-error").hidden = true;
+  kidFormState();
+  $("kid-form").hidden = false;
+  $("kid-add").hidden = true;
+  $("kid-form").scrollIntoView({ behavior: "smooth", block: "start" });
+  $("kid-name").focus({ preventScroll: true });
+}
+
+function closeKidForm() {
+  kidEditing = null;
+  $("kid-form").hidden = true;
+  $("kid-add").hidden = false;
+}
+
+$("kid-add").addEventListener("click", () => openKidForm(null));
+$("kid-cancel").addEventListener("click", closeKidForm);
+$("kid-delete").addEventListener("click", async () => {
+  const name = kidEditing;
+  if (!name || !confirm(`Take ${name} off Play time? Their limits and bedtime stop, and their time is no longer counted under their name.`)) return;
+  if (await kidCall(() => post("/api/playtime/kids/delete", { name }))) closeKidForm();
+});
+$("kid-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const kid = {
+    name: $("kid-name").value,
+    players: $("kid-players").value.split(/[\n,]/).map((x) => x.trim()).filter(Boolean),
+    limit: { on: $("kid-limit-on").checked, school: Number($("kid-limit-school").value) || 0, weekend: Number($("kid-limit-weekend").value) || 0 },
+    hours: { on: $("kid-hours-on").checked,
+      school: { from: $("kid-school-from").value, until: $("kid-school-until").value },
+      weekend: { from: $("kid-weekend-from").value, until: $("kid-weekend-until").value } },
+  };
+  try {
+    renderPlaytime(await post("/api/playtime/kids", { old: kidEditing || "", kid }));
+    showPlaytimeError(null);
+    closeKidForm();
+  } catch (err) {
+    $("kid-error").textContent = err.message;
+    $("kid-error").hidden = false;
+  }
+});
+
+// A kid sees their own time left on the Servers page, when the owner has
+// put them on Play time under their account's name.
+async function loadMyTime() {
+  if (!signedIn || me.owner) { $("my-time-banner").hidden = true; return; }
+  let v = {};
+  try { v = await api("/api/me/playtime"); } catch (_) { /* leave it */ }
+  if (v.left == null) { $("my-time-banner").hidden = true; return; }
+  $("my-time-text").replaceChildren(...(v.left > 0
+    ? [el("b", {}, fmtMinutes(v.left)), v.why === "bedtime" ? " until bedtime." : " of play left today.", ` You've played ${fmtMinutes(v.today)} today.`]
+    : [el("b", {}, v.why === "bedtime" ? "It's outside your play hours." : "That's all your play time for today."), " See you tomorrow!"]));
+  $("my-time-banner").hidden = false;
+}
 
 // ---- keeping a version, deleting a server ----
 
@@ -2501,6 +2792,7 @@ function enterApp(st) {
   applyPrefs(st.prefs || {}, false);
   if (me.owner) api("/api/settings").then((s) => { settings = s || {}; }).catch(() => {});
   loadJoinInfo();
+  loadMyTime();
   checkUpdates();
   timers.forEach(clearInterval);
   const onServer = (t) => signedIn && view === "server" && selected && tab === t && !document.hidden;
@@ -2511,6 +2803,7 @@ function enterApp(st) {
     setInterval(() => { if (onServer("overview")) loadOverview(); }, 10000),
     setInterval(checkUpdates, 10 * 60 * 1000),
     setInterval(loadJoinInfo, 30 * 60 * 1000),
+    setInterval(loadMyTime, 60 * 1000),
     setInterval(() => { if (signedIn && view === "outside" && !document.hidden) loadOutside(false); }, 10000),
   ];
   if (me.owner && !st.setupDone && !location.hash.startsWith("#/guide")) location.hash = "#/guide";

@@ -51,6 +51,10 @@ PS5, and the panel runs a family's servers day to day. See the
   server is copied in with its worlds, settings, allowlist and operators, and
   keeps its port. The original is only read, never changed. See
   [Moving from Crafty](#moving-from-crafty).
+- **Play time.** See how long each kid plays, and if you want, give them a
+  daily limit and a bedtime across every server, and give servers open hours.
+  Players get warnings in the game before their time is up. See
+  [Play time](#play-time).
 - **Owner account** with a sign-in page, a setup guide the first time, and
   a password reset from the command line. Passwords are hashed with Argon2id;
   repeated wrong passwords lock that address out for 15 minutes. Optional
@@ -240,6 +244,41 @@ The **activity log** records who did what (turned a server off, restored a
 backup, changed settings, let someone in). The owner sees all of it on the
 People page; everyone sees what happened to their own servers on the
 server's Overview.
+
+### Play time
+
+**Settings → Play time** (owner only) shows how long each kid has played
+today and each day this week. Everything on it is optional.
+
+- **Add a kid** with the names they play as: their Xbox gamertag, Java
+  username or Hytale username, one per line. Their time counts on every
+  server, under any of those names (a console player on a Java server,
+  `.Gamer_Tag`, counts as the gamertag).
+- **Daily limit**: how long they may play on school days (Monday to Friday)
+  and at weekends.
+- **Play hours**: when they may play, one span for Sunday to Thursday nights
+  and one for Friday and Saturday nights.
+- When their time is nearly up they get messages in the game 10, 5 and 1
+  minute before, then they're moved off the server, and moved off again if
+  they come back. On Hytale servers their time is counted but they aren't
+  moved off yet.
+- **More time today** (+15 min, +30 min, +1 h) stretches both the limit and
+  bedtime for today only.
+- A kid whose panel account has the same name sees their time left on the
+  Servers page.
+- **Other players this week** lists anyone who played but isn't on a kid's
+  list, with **Add to…** to put the name on one.
+
+A server can have **open hours** too (its Settings tab, owner only). Players
+are warned 10, 5 and 1 minute before closing time, then the world is saved
+and the server stops; it starts again when it opens (if it was running).
+Nobody but the owner can start it in between. **Keep it open tonight until**
+stretches one night, and starting it yourself outside its hours keeps it open
+until it would open anyway. If you set hours while people are playing
+outside them, they get 10 minutes' warning.
+
+Each server's **Players** tab shows who played there this week. Play history
+is kept for two months in `play-history.json` in the data folder.
 
 ### Friends outside the house
 

@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.3.0
+
+- **Play time** (Settings → Play time): how long each kid plays today and
+  each day this week, across every server and under every name they play as.
+  Optional daily limits (school days and weekends) and play hours (school
+  nights and weekend nights), with warnings in the game 10, 5 and 1 minute
+  before, then they're moved off the server. Give extra time for the day in
+  one tap. A kid sees their own time left when they sign in.
+- **Open hours for servers** (a server's Settings tab): warnings, then it
+  saves and closes for the night, and opens again in the morning. Only the
+  owner can start it in between, or keep it open late for one night.
+- **Played this week** on each server's Players tab.
+
 ## 1.2.1
 
 From [Revise0592's fork](https://github.com/Revise0592/block-party):

@@ -420,3 +420,66 @@ func TestNotificationSettingsAreTheOwners(t *testing.T) {
 		t.Errorf("test without settings: %d %s", w.Code, w.Body)
 	}
 }
+
+// Play time is the owner's: kids only see their own time left, and can't
+// start a server outside its hours.
+func TestPlayTimeIsTheOwners(t *testing.T) {
+	s, dir := newTestServer(t)
+	addTestServer(t, s, dir, "ava", "Ava's Server", 19140)
+	h := s.routes()
+	owner := ownerCookie(s)
+	call(h, "POST", "/api/users", `{"username":"Ava","password":"ava password 1"}`, owner)
+	call(h, "PUT", "/api/users/Ava", `{"grants":{"ava":"care"}}`, owner)
+	ava := sessionFrom(t, call(h, "POST", "/api/auth/login", `{"username":"Ava","password":"ava password 1"}`))
+
+	kid := `{"old":"","kid":{"name":"Ava","players":["Ava Plays"],"limit":{"on":true,"school":60,"weekend":90}}}`
+	if w := call(h, "POST", "/api/playtime/kids", kid, ava); w.Code != 403 {
+		t.Errorf("a kid set limits: %d", w.Code)
+	}
+	if w := call(h, "POST", "/api/playtime/kids", kid, owner); w.Code != 200 {
+		t.Fatalf("owner: %d %s", w.Code, w.Body)
+	}
+	for _, path := range []string{"/api/playtime"} {
+		if w := call(h, "GET", path, "", ava); w.Code != 403 {
+			t.Errorf("%s: %d", path, w.Code)
+		}
+	}
+	if w := call(h, "POST", "/api/playtime/kids/extra", `{"name":"Ava","minutes":30}`, ava); w.Code != 403 {
+		t.Errorf("a kid gave herself time: %d", w.Code)
+	}
+	var mine map[string]any
+	json.Unmarshal(call(h, "GET", "/api/me/playtime", "", ava).Body.Bytes(), &mine)
+	if mine["left"] == nil || mine["why"] != "limit" {
+		t.Errorf("her own time: %v", mine)
+	}
+
+	// Hours that don't include now.
+	now := time.Now()
+	span := `{"from":"00:00","until":"01:00"}`
+	if now.Hour() < 2 {
+		span = `{"from":"12:00","until":"13:00"}`
+	}
+	hours := `{"on":true,"school":` + span + `,"weekend":` + span + `}`
+	if w := call(h, "POST", "/api/servers/ava/hours", hours, ava); w.Code != 403 {
+		t.Errorf("a kid changed hours: %d", w.Code)
+	}
+	if w := call(h, "POST", "/api/servers/ava/hours", hours, owner); w.Code != 200 {
+		t.Fatalf("hours: %d %s", w.Code, w.Body)
+	}
+	if w := call(h, "POST", "/api/servers/ava/start", "", ava); w.Code != 409 || !strings.Contains(w.Body.String(), "outside Ava's Server's hours") {
+		t.Errorf("a kid started it outside its hours: %d %s", w.Code, w.Body)
+	}
+	if w := call(h, "POST", "/api/servers/ava/open-late", `{"until":"bad"}`, owner); w.Code != 400 {
+		t.Errorf("bad time: %d", w.Code)
+	}
+	late := now.Add(2 * time.Hour).Format("15:04")
+	var st map[string]any
+	w := call(h, "POST", "/api/servers/ava/open-late", `{"until":"`+late+`"}`, owner)
+	json.Unmarshal(w.Body.Bytes(), &st)
+	if w.Code != 200 || st["hours"].(map[string]any)["open"] != true || st["hours"].(map[string]any)["late"] == nil {
+		t.Errorf("open late: %d %s", w.Code, w.Body)
+	}
+	if w := call(h, "GET", "/api/servers/ava/played", "", ava); w.Code != 200 {
+		t.Errorf("played: %d", w.Code)
+	}
+}

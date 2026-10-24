@@ -161,6 +161,7 @@ func main() {
 	}
 	mgr.StartAutoStart()
 	mgr.RunBackupSchedule()
+	mgr.RunPlayTime()
 	mgr.RunHytaleKeepAlive()
 
 	cfg.OutsideInfo = func() serverlist.Outside {

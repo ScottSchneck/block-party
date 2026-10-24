@@ -118,6 +118,10 @@
         <a class="button" href="#/upkeep" id="update-auto-link" data-owner-only>Do it overnight</a>
         <button type="button" id="update-all">Update all</button>
       </div>
+      <div id="my-time-banner" class="banner info" hidden>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="13" r="8"></circle><path d="M12 9v4l2.5 2.5M9 2h6"></path></svg>
+        <p class="grow" id="my-time-text"></p>
+      </div>
       <div id="panel-update-banner" class="banner info" hidden>
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l2.5 5 5.5.8-4 3.9.9 5.5-4.9-2.6-4.9 2.6.9-5.5-4-3.9 5.5-.8z"></path></svg>
         <p class="grow"><b id="panel-update-text"></b> <span id="panel-update-how"></span></p>
@@ -306,6 +310,7 @@
       <div class="card help-links">
         <a href="#/outside"><b>Friends outside the house</b><span class="muted">Let friends who don't live here join the servers you choose.</span></a>
         <a href="#/people"><b>People</b><span class="muted">Accounts for your kids, and which servers each one can use.</span></a>
+        <a href="#/playtime"><b>Play time</b><span class="muted">How long each kid plays, daily limits, bedtimes, and servers' open hours.</span></a>
       </div>
       <h2 class="section-title">Keeping things running</h2>
       <div class="card help-links">
@@ -387,7 +392,7 @@
     <!-- People (owner only) -->
     <section id="view-people" class="view" hidden>
       <h1>People</h1>
-      <p class="muted">Give each kid their own sign-in, then choose what they can do on each server. They only see the servers you give them. Nobody but you can delete a server or manage accounts.</p>
+      <p class="muted">Give each kid their own sign-in, then choose what they can do on each server. They only see the servers you give them. Nobody but you can delete a server or manage accounts. How long they play, daily limits and bedtimes are on <a href="#/playtime">Play time</a>.</p>
 
       <div class="card roles-help">
         <dl>
@@ -423,6 +428,71 @@
         <h2>Recent activity</h2>
         <ul id="people-activity" class="people activity"></ul>
       </section>
+    </section>
+
+    <!-- Play time (owner only) -->
+    <section id="view-playtime" class="view" hidden>
+      <div class="crumbs"><a href="#/settings">Settings</a> /</div>
+      <div class="page-head">
+        <div class="grow">
+          <h1>Play time</h1>
+          <p class="muted">How long each kid plays, and when they may. Everything here is optional: a kid without a limit or play hours can play whenever their servers are open.</p>
+        </div>
+        <button type="button" id="kid-add" class="primary">Add a kid</button>
+      </div>
+      <p id="playtime-error" class="error" hidden></p>
+
+      <form id="kid-form" class="card" hidden>
+        <h2 id="kid-form-title">Add a kid</h2>
+        <label>Name
+          <input id="kid-name" maxlength="32" autocomplete="off" required placeholder="Ava">
+        </label>
+        <label>The names they play as
+          <textarea id="kid-players" rows="3" class="plain" placeholder="One per line: their Xbox gamertag, Java username or Hytale username"></textarea>
+        </label>
+        <p class="muted small">Their time counts on every server, under any of these names. Use the same name as their panel account and they see their time left when they sign in.</p>
+        <fieldset>
+          <legend>Daily limit</legend>
+          <label class="check"><input type="checkbox" id="kid-limit-on"> <span>Limit how long they play each day</span></label>
+          <div class="row" id="kid-limit-times">
+            <label class="inline">School days (Mon to Fri) <input type="number" id="kid-limit-school" min="0" max="1440" step="15" class="port"> minutes</label>
+            <label class="inline">Weekends <input type="number" id="kid-limit-weekend" min="0" max="1440" step="15" class="port"> minutes</label>
+          </div>
+        </fieldset>
+        <fieldset>
+          <legend>Play hours</legend>
+          <label class="check"><input type="checkbox" id="kid-hours-on"> <span>Only let them play at certain times</span></label>
+          <div class="hours-grid" id="kid-hours-times">
+            <span class="label">Sunday to Thursday nights</span>
+            <label class="inline">From <input type="time" id="kid-school-from"></label>
+            <label class="inline">until <input type="time" id="kid-school-until"></label>
+            <span class="label">Friday and Saturday nights</span>
+            <label class="inline">From <input type="time" id="kid-weekend-from"></label>
+            <label class="inline">until <input type="time" id="kid-weekend-until"></label>
+          </div>
+        </fieldset>
+        <p class="muted small">They get messages in the game 10, 5 and 1 minute before their time is up, then they're moved off the server. On Hytale servers their time is counted, but they aren't moved off yet.</p>
+        <div class="row">
+          <button type="submit" class="primary">Save</button>
+          <button type="button" id="kid-cancel">Cancel</button>
+          <button type="button" id="kid-delete" class="danger" hidden>Take off Play time</button>
+        </div>
+        <p id="kid-error" class="error" hidden></p>
+      </form>
+
+      <div id="kids" class="cols"></div>
+
+      <h2 class="section-title">Other players this week</h2>
+      <div class="card">
+        <p class="muted small">Played in the last 7 days but not on any kid's list. Add a name to a kid to count their time.</p>
+        <ul id="others" class="people"></ul>
+      </div>
+
+      <h2 class="section-title">Servers' open hours</h2>
+      <div class="card">
+        <p class="muted small">Set a server's hours on its Settings tab.</p>
+        <ul id="server-hours" class="people"></ul>
+      </div>
     </section>
 
     <!-- Friends outside the house (owner only) -->
@@ -740,6 +810,33 @@
           <p class="muted small" id="hold-help"></p>
         </section>
 
+        <section class="card" id="hours-card" data-owner-only hidden>
+          <h3>Open hours</h3>
+          <label class="check">
+            <input type="checkbox" id="hours-on">
+            <span>Only open at certain times</span>
+          </label>
+          <p class="muted small">Outside these times the server is closed: players get warnings in the game 10, 5 and 1 minute before, then it saves and stops, and it starts again when it opens. Only you can start it outside its hours.</p>
+          <div id="hours-times" class="hours-grid">
+            <span class="label">Sunday to Thursday nights</span>
+            <label class="inline">From <input type="time" id="hours-school-from" required></label>
+            <label class="inline">until <input type="time" id="hours-school-until" required></label>
+            <span class="label">Friday and Saturday nights</span>
+            <label class="inline">From <input type="time" id="hours-weekend-from" required></label>
+            <label class="inline">until <input type="time" id="hours-weekend-until" required></label>
+          </div>
+          <div class="row"><button type="button" id="hours-save" class="primary" hidden>Save hours</button></div>
+          <div id="hours-now" hidden>
+            <p id="hours-status"></p>
+            <div class="row">
+              <label class="inline">Keep it open tonight until <input type="time" id="hours-late"></label>
+              <button type="button" id="hours-late-save">Keep open</button>
+              <button type="button" id="hours-late-end" hidden>Back to its usual hours</button>
+            </div>
+          </div>
+          <p id="hours-error" class="error" hidden></p>
+        </section>
+
         <form id="settings-form">
           <div id="settings-groups" class="cols"></div>
           <div id="settings-bar" class="savebar" hidden>
@@ -813,6 +910,12 @@
             <button type="submit">Make operator</button>
           </form>
           <ul id="operators" class="people"></ul>
+        </div>
+
+        <div class="card">
+          <h3>Played this week</h3>
+          <p class="muted small">Time on this server over the last 7 days, today included.</p>
+          <ul id="played" class="people"></ul>
         </div>
       </div>
 

@@ -77,6 +77,8 @@ type Status struct {
 	// ConsolesWaiting is the server's Minecraft version when Geyser doesn't
 	// support it yet, so consoles can't join until a newer Geyser is out.
 	ConsolesWaiting string `json:"consolesWaiting,omitempty"`
+	// Hours: when it's open, if it has hours.
+	Hours *HoursStatus `json:"hours,omitempty"`
 }
 
 const (
@@ -196,7 +198,7 @@ func (s *Server) Status() Status {
 		ID: s.meta.ID, Name: s.meta.Name, Type: s.meta.Type, Version: s.meta.Version,
 		Port: s.meta.Port, State: s.state, Message: s.message, AutoStart: s.meta.AutoStart,
 		Players: []Player{}, Preview: s.meta.Preview, Waiting: len(s.attempts),
-		Outside: s.meta.Outside, HoldVersion: s.meta.HoldVersion,
+		Outside: s.meta.Outside, HoldVersion: s.meta.HoldVersion, Hours: s.hoursStatusLocked(time.Now()),
 	}
 	if s.isJava() {
 		st.Build, st.MemoryMB = s.meta.Build, s.meta.MemoryMB
@@ -349,6 +351,7 @@ func (s *Server) onLineLocked(line string) {
 		mm := rePlayerJoin.FindStringSubmatch(line)
 		s.players[mm[1]] = Player{Name: mm[1], XUID: mm[2], Since: time.Now()}
 		s.playedSinceBackup = true
+		s.m.playtime.kick() // a kid whose time is up is moved off at once
 		s.notifyLocked(notify.PlayerJoined, mm[1]+" is playing on "+s.meta.Name, mm[1]+" joined "+s.meta.Name+".",
 			"play/"+s.meta.ID+"/"+strings.ToLower(mm[1]))
 		s.m.saves.Add(1)
@@ -358,7 +361,7 @@ func (s *Server) onLineLocked(line string) {
 		}(mm[1], mm[2])
 	case rePlayerLeave.MatchString(line):
 		mm := rePlayerLeave.FindStringSubmatch(line)
-		delete(s.players, mm[1])
+		s.playerLeftLocked(mm[1])
 	case reVersion.MatchString(line) && s.state == StateStarting:
 		if v := reVersion.FindStringSubmatch(line)[1]; v != s.meta.Version {
 			s.meta.Version = v
@@ -571,7 +574,7 @@ func (s *Server) onExit(cmd *exec.Cmd, err error) {
 	close(s.exited)
 	close(s.commands)
 	s.cmd, s.commands, s.exited = nil, nil, nil
-	s.players = map[string]Player{}
+	s.everyoneLeftLocked()
 	cleanExit := cmd.ProcessState != nil && cmd.ProcessState.Success()
 	if requested || cleanExit {
 		// A clean exit we didn't ask for is the server being stopped from

@@ -81,6 +81,8 @@ type Manager struct {
 	hytale        hytaleAuth
 	hytaleLatest  hytaleCache
 	javaMu        sync.Mutex // one Java runtime install at a time
+	history       *playHistory
+	playtime      *playtime
 }
 
 // Meta is what the panel remembers about a server between restarts.
@@ -135,6 +137,12 @@ type Meta struct {
 	// LastNightly is the night (its date) overnight upkeep last acted on
 	// the server, so a panel restart doesn't do it twice.
 	LastNightly string `json:"lastNightly,omitempty"`
+	// Hours are when the server is open (nil or off: always). OpenLate
+	// keeps it open past them until then, for one night. ClosedForHours is
+	// set while it's stopped for the night, to start again when it opens.
+	Hours          *Hours    `json:"hours,omitempty"`
+	OpenLate       time.Time `json:"openLate,omitempty"`
+	ClosedForHours bool      `json:"closedForHours,omitempty"`
 }
 
 // The name is from before the panel was called Block Party; it stays so
@@ -167,7 +175,10 @@ func New(opts Options) *Manager {
 		opts.Log = slog.Default()
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	return &Manager{opts: opts, log: opts.Log.With("src", "servers"), servers: map[string]*Server{}, ctx: ctx, cancel: cancel, people: newPeople(opts.DataDir)}
+	m := &Manager{opts: opts, log: opts.Log.With("src", "servers"), servers: map[string]*Server{}, ctx: ctx, cancel: cancel, people: newPeople(opts.DataDir),
+		history: newPlayHistory(opts.DataDir)}
+	m.playtime = newPlaytime(m)
+	return m
 }
 
 func (m *Manager) serversDir() string { return filepath.Join(m.opts.DataDir, "servers") }
@@ -249,6 +260,14 @@ func (m *Manager) StartAutoStart() {
 	for _, s := range m.all() {
 		s.mu.Lock()
 		want := s.meta.AutoStart && s.state == StateStopped // not after an error, such as a half-applied update
+		if st := s.hoursStatusLocked(time.Now()); want && st != nil && !st.Open {
+			// Outside its hours: it starts when it opens.
+			want = false
+			if !s.meta.ClosedForHours {
+				s.meta.ClosedForHours = true
+				s.saveMetaLater()
+			}
+		}
 		s.mu.Unlock()
 		if want && s.isHytale() {
 			// It asks Hytale for a session first: don't hold up the others.

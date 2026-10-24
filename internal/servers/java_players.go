@@ -343,6 +343,7 @@ func (s *Server) onJavaLineLocked(line string) {
 		}
 		s.players[name] = Player{Name: name, Since: time.Now()}
 		s.playedSinceBackup = true
+		s.m.playtime.kick() // a kid whose time is up is moved off at once
 		if isConsoleName(name) {
 			s.onConsoleJoinLocked(name)
 		}
@@ -361,9 +362,9 @@ func (s *Server) onJavaLineLocked(line string) {
 			s.saveMetaLater()
 		}
 	case reJavaLeave.MatchString(line):
-		delete(s.players, reJavaLeave.FindStringSubmatch(line)[1])
+		s.playerLeftLocked(reJavaLeave.FindStringSubmatch(line)[1])
 	case reJavaLost.MatchString(line):
-		delete(s.players, reJavaLost.FindStringSubmatch(line)[1])
+		s.playerLeftLocked(reJavaLost.FindStringSubmatch(line)[1])
 	case reJavaNotAllow.MatchString(line):
 		name := reJavaNotAllow.FindStringSubmatch(line)[1]
 		// With account checks on (online-mode), the name is real.

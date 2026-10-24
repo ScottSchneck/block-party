@@ -201,6 +201,7 @@ func (s *Server) routes() http.Handler {
 	s.addonRoutes(mux)
 	s.pluginRoutes(mux)
 	s.hytaleRoutes(mux)
+	s.playtimeRoutes(mux)
 	s.lifecycleRoutes(mux)
 	s.notifyRoutes(mux)
 	return s.secure(mux)
@@ -453,6 +454,23 @@ func (s *Server) serverAction(w http.ResponseWriter, r *http.Request) {
 	if srv.Importing() {
 		writeError(w, http.StatusConflict, servers.ErrImporting)
 		return
+	}
+	// Outside a server's hours only the owner can start it, and then it
+	// stays open until it would next open anyway.
+	if action == "start" || action == "restart" {
+		if why := srv.ClosedNow(); why != "" {
+			if !me(r).Owner {
+				writeError(w, http.StatusConflict, errors.New("can't start it now: "+why))
+				return
+			}
+			if st := srv.HoursNow(); st != nil && st.Opens != nil {
+				if err := srv.KeepOpenUntil(*st.Opens); err != nil {
+					writeError(w, http.StatusConflict, err)
+					return
+				}
+				s.note(r, srv, "opened it outside its hours")
+			}
+		}
 	}
 	var err error
 	switch action {
