@@ -50,6 +50,9 @@ type Options struct {
 	// Notify, when set, is told about things the owner may want to hear
 	// about (crashes, join attempts, failed backups…). It must not block.
 	Notify func(notify.Event)
+	// BackupMade is told when a new backup has been saved (to copy it
+	// off-site).
+	BackupMade func()
 }
 
 // Manager keeps track of all servers.

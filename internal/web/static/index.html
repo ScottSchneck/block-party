@@ -233,7 +233,7 @@
     <!-- All backups -->
     <section id="view-backups" class="view" hidden>
       <h1>Backups</h1>
-      <p class="muted">Each server's backups, schedule and restore are on its Backups tab.</p>
+      <p class="muted">Each server's backups, schedule and restore are on its Backups tab. <span data-owner-only><a href="#/offsite" id="backups-offsite-link">Off-site backups</a></span></p>
       <p id="backups-none" class="card muted" hidden>None of your servers' backups are yours to see. Ask the owner.</p>
       <div id="backups-overview" class="server-table"></div>
       <section class="card" id="deleted-box" data-owner-only hidden>
@@ -316,6 +316,7 @@
       <div class="card help-links">
         <a href="#/upkeep"><b>Overnight updates and restarts</b><span class="muted">Keep servers on the newest version without anyone pressing Update.</span></a>
         <a href="#/notify"><b>Notifications</b><span class="muted">Phone, Discord, email or text messages when someone wants in, a server crashes, or a backup fails.</span></a>
+        <a href="#/offsite"><b>Off-site backups</b><span class="muted" id="settings-offsite-sum">A second copy of every backup on Google Drive, iCloud Drive, OneDrive, Dropbox, Backblaze, S3, or another disk.</span></a>
       </div>
       </div>
       <div class="col">
@@ -427,6 +428,114 @@
       <section class="card">
         <h2>Recent activity</h2>
         <ul id="people-activity" class="people activity"></ul>
+      </section>
+    </section>
+
+    <!-- Off-site backups (owner only) -->
+    <section id="view-offsite" class="view narrow" hidden>
+      <div class="crumbs"><a href="#/settings">Settings</a> /</div>
+      <h1>Off-site backups</h1>
+      <p class="muted">A second copy of your backups somewhere else, so a failed disk, a fire or a mistake can't take the worlds and their backups at the same time. Each new backup is copied as soon as it's made, and the newest few of each server are kept there.</p>
+      <p id="offsite-error" class="error" hidden></p>
+      <p id="offsite-norclone" class="card attention" hidden>This container doesn't have rclone, which off-site backups use. Update Block Party to the newest version.</p>
+
+      <section class="card" id="offsite-status" hidden>
+        <h2>Copying</h2>
+        <p id="offsite-where"></p>
+        <p id="offsite-state" class="small"></p>
+        <div class="row">
+          <label class="check"><input type="checkbox" id="offsite-on"> <span>Copy backups off-site</span></label>
+        </div>
+        <div class="row">
+          <label class="inline">Keep the newest <input type="number" id="offsite-keep" min="1" max="50" class="port"> backups of each server there</label>
+          <button type="button" id="offsite-keep-save" hidden>Save</button>
+        </div>
+        <div class="row">
+          <button type="button" id="offsite-copy-now" class="primary">Copy now</button>
+          <button type="button" id="offsite-change">Change where</button>
+          <button type="button" id="offsite-disconnect" class="danger">Disconnect</button>
+        </div>
+      </section>
+
+      <form id="offsite-form" class="card" hidden>
+        <h2>Where to copy them</h2>
+        <div id="offsite-kinds" class="choice-row" role="radiogroup" aria-label="Where to copy backups"></div>
+        <p id="offsite-kind-help" class="muted small"></p>
+
+        <div data-how="icloud" hidden>
+          <label>Apple ID <input id="offsite-apple-id" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="you@icloud.com"></label>
+          <label>Apple ID password <input id="offsite-apple-pass" type="password" autocomplete="off"></label>
+        </div>
+        <div data-how="keys" hidden>
+          <label data-kind="s3">Service
+            <select id="offsite-provider">
+              <option value="AWS">Amazon S3</option>
+              <option value="Cloudflare">Cloudflare R2</option>
+              <option value="Wasabi">Wasabi</option>
+              <option value="Other">Another S3-compatible service</option>
+            </select>
+          </label>
+          <label><span id="offsite-keyid-label">Key ID</span> <input id="offsite-keyid" autocomplete="off" spellcheck="false" class="mono"></label>
+          <label><span id="offsite-key-label">Application key</span> <input id="offsite-key" type="password" autocomplete="off" class="mono"></label>
+          <label>Bucket <input id="offsite-bucket" autocomplete="off" spellcheck="false" placeholder="family-backups"></label>
+          <label data-kind="s3" id="offsite-endpoint-label">Endpoint <input id="offsite-endpoint" autocomplete="off" spellcheck="false" placeholder="https://<account>.r2.cloudflarestorage.com"></label>
+          <label data-kind="s3">Region <input id="offsite-region" autocomplete="off" spellcheck="false" placeholder="us-east-1 (optional for most services)"></label>
+        </div>
+        <div data-how="folder" hidden>
+          <label>Folder in the container <input id="offsite-path" value="/offsite" autocomplete="off" spellcheck="false" class="mono"></label>
+          <p class="muted small">On Unraid, edit the container and add a Path: <b>Container Path</b> <span class="mono">/offsite</span>, <b>Host Path</b> a share on another disk or a USB drive (for example <span class="mono">/mnt/disks/usb/blockparty</span>). A folder on the same disks as your servers doesn't protect against a failed array.</p>
+        </div>
+
+        <fieldset>
+          <legend>Options</legend>
+          <div class="row">
+            <label class="inline">Folder there <input id="offsite-folder" value="Block Party" autocomplete="off"></label>
+            <label class="inline">Keep the newest <input type="number" id="offsite-new-keep" value="3" min="1" max="50" class="port"> of each server</label>
+          </div>
+          <label class="check"><input type="checkbox" id="offsite-encrypt"> <span>Encrypt them before they leave (names too)</span></label>
+          <div id="offsite-pass-box" hidden>
+            <label>Encryption passphrase <input id="offsite-pass" type="password" minlength="8" autocomplete="new-password"></label>
+            <p class="muted small warn">Write it down somewhere safe. Without it the off-site copies can't be read, by anyone, including you after a new install.</p>
+          </div>
+        </fieldset>
+        <div class="row">
+          <button type="submit" class="primary" id="offsite-connect">Connect</button>
+          <button type="button" id="offsite-cancel" hidden>Cancel</button>
+        </div>
+      </form>
+
+      <section class="card" id="offsite-signin" hidden>
+        <h2>Sign in to <span id="offsite-signin-name"></span></h2>
+        <ol class="steps-list">
+          <li><a id="offsite-signin-link" class="button primary" target="_blank" rel="noopener noreferrer">Open the sign-in page</a> and allow access.</li>
+          <li>Your browser then shows a page that won't load (<span class="mono">127.0.0.1</span> or <span class="mono">localhost</span> "refused to connect"). That's expected: copy the whole address from the address bar.</li>
+          <li>Paste it here:
+            <form id="offsite-paste-form" class="row">
+              <input id="offsite-paste" class="grow mono" autocomplete="off" spellcheck="false" placeholder="http://127.0.0.1:53682/?state=…&amp;code=…" aria-label="The address the sign-in ended on">
+              <button type="submit" class="primary">Finish</button>
+            </form>
+          </li>
+        </ol>
+        <p class="muted small">Do it within 15 minutes. If it times out, press Connect again.</p>
+        <div class="row"><button type="button" id="offsite-signin-cancel">Cancel</button></div>
+      </section>
+
+      <section class="card" id="offsite-question" hidden>
+        <h2>One more step</h2>
+        <p id="offsite-question-text"></p>
+        <form id="offsite-answer-form" class="row">
+          <input id="offsite-answer" autocomplete="one-time-code" inputmode="numeric" class="mono" aria-label="Answer">
+          <button type="submit" class="primary">Continue</button>
+        </form>
+      </section>
+
+      <section class="card" id="offsite-copies-box" hidden>
+        <div class="row between">
+          <h2>What's off-site</h2>
+          <button type="button" id="offsite-copies-load">Show</button>
+        </div>
+        <p class="muted small">To restore from an off-site copy, download it to this panel, then restore it from the server's Backups tab. A server that isn't in the panel any more (after a new install, say) can then be brought back from Backups → Deleted servers.</p>
+        <div id="offsite-copies"></div>
       </section>
     </section>
 

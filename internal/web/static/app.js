@@ -413,8 +413,8 @@ function route() {
     notifyDirty = false;
   }
   if (next === "joining") next = "help";
-  if (!["servers", "backups", "help", "import", "add", "guide", "people", "outside", "upkeep", "notify", "account", "server", "settings", "playtime"].includes(next)) next = "servers";
-  if ((["import", "guide", "people", "outside", "upkeep", "notify", "settings", "playtime"].includes(next) && !me.owner) || (next === "add" && !me.canAdd)) {
+  if (!["servers", "backups", "help", "import", "add", "guide", "people", "outside", "upkeep", "notify", "account", "server", "settings", "playtime", "offsite"].includes(next)) next = "servers";
+  if ((["import", "guide", "people", "outside", "upkeep", "notify", "settings", "playtime", "offsite"].includes(next) && !me.owner) || (next === "add" && !me.canAdd)) {
     location.hash = "#/"; // not for this account
     return;
   }
@@ -476,6 +476,7 @@ function route() {
   if (next === "upkeep") loadUpkeep();
   if (next === "notify") loadNotify();
   if (next === "playtime") { closeKidForm(); loadPlaytime(); }
+  if (next === "offsite") { offsiteChanging = false; offsiteFlow = null; $("offsite-copies").replaceChildren(); loadOffsite(); }
   if (next === "backups" && me.owner) loadDeleted();
   if (next === "guide") openGuide(1);
   if (next === "help") fillJoinInfo();
@@ -486,7 +487,7 @@ function setView(v) {
   view = v;
   for (const sec of document.querySelectorAll(".view")) sec.hidden = sec.id !== "view-" + v;
   // Pages without their own menu entry light up the one they're reached from.
-  const navKey = { server: "servers", add: "servers", import: "servers", guide: "help", outside: "settings", upkeep: "settings", notify: "settings", playtime: "settings", people: me.owner ? "people" : "account" }[v] || v;
+  const navKey = { server: "servers", add: "servers", import: "servers", guide: "help", outside: "settings", upkeep: "settings", notify: "settings", playtime: "settings", offsite: "settings", people: me.owner ? "people" : "account" }[v] || v;
   for (const a of document.querySelectorAll("[data-nav]")) {
     if (a.dataset.nav === navKey) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
   }
@@ -1497,6 +1498,183 @@ async function loadMyTime() {
     : [el("b", {}, v.why === "bedtime" ? "It's outside your play hours." : "That's all your play time for today."), " See you tomorrow!"]));
   $("my-time-banner").hidden = false;
 }
+
+// ---- off-site backups ----
+
+let offsite = null;          // last /api/offsite answer
+let offsiteKind = "drive";   // the destination being chosen
+let offsiteChanging = false; // choosing a new destination while one is connected
+let offsiteFlow = null;      // "oauth" or "question" while connecting
+let offsiteTimer = null;
+
+const offsiteHelp = {
+  drive: "You'll sign in on Google's own page. Block Party can only see the files it puts in your Drive.",
+  icloud: "Advanced Data Protection must be off, and \"Access iCloud Data on the Web\" on (iPhone Settings → your name → iCloud). Apple asks for a code from one of your devices, and may ask you to sign in again every month or so: the panel tells you when.",
+  onedrive: "You'll sign in on Microsoft's own page. Works with personal and work or school accounts.",
+  dropbox: "You'll sign in on Dropbox's own page.",
+  b2: "Make an application key for one bucket in your Backblaze account (Application Keys), and type it here.",
+  s3: "An access key that can read and write the bucket.",
+  folder: "Another disk or share mounted into the container, such as a USB drive or a share on another server.",
+};
+
+function showOffsiteError(err) {
+  $("offsite-error").textContent = err ? err.message : "";
+  $("offsite-error").hidden = !err;
+}
+
+async function loadOffsite() {
+  clearTimeout(offsiteTimer);
+  try {
+    renderOffsite(await api("/api/offsite"));
+    showOffsiteError(null);
+  } catch (err) { showOffsiteError(err); }
+}
+
+function kindLabel(kind) {
+  const k = ((offsite && offsite.kinds) || []).find((x) => x.kind === kind);
+  return k ? k.label : kind;
+}
+
+function renderOffsite(v) {
+  offsite = v;
+  const s = v.settings, st = v.status;
+  const connected = !!s.kind;
+  $("offsite-norclone").hidden = !!v.rclone;
+  $("offsite-status").hidden = !connected;
+  $("offsite-copies-box").hidden = !connected;
+  $("offsite-form").hidden = !!offsiteFlow || (connected && !offsiteChanging);
+  $("offsite-cancel").hidden = !connected;
+  $("offsite-signin").hidden = offsiteFlow !== "oauth";
+  $("offsite-question").hidden = offsiteFlow !== "question";
+  if (connected) {
+    const where = s.kind === "folder" ? `${s.path}/${s.folder}` : (s.kind === "b2" || s.kind === "s3") ? `bucket ${s.path}, folder ${s.folder}` : `folder ${s.folder}`;
+    $("offsite-where").replaceChildren("To ", el("b", {}, kindLabel(s.kind)), s.account ? ` (${s.account})` : "", `, ${where}`, s.encrypt ? ", encrypted" : "", ".");
+    let state, cls = "muted";
+    if (!s.on) state = "Paused: new backups aren't copied.";
+    else if (st.running) state = st.copying ? `Copying ${st.copying}…` : "Checking what's there…";
+    else if (st.lastError) { state = `The last try failed: ${st.lastError} It's tried again every 15 minutes.`; cls = "warn"; }
+    else if (st.lastOK) state = `Up to date, checked ${whenShort(st.lastOK).toLowerCase().replace(/^today /, "today at ")}` + (st.copied ? `, ${st.copied} copied` : "") + (st.removed ? `, ${st.removed} older ones removed` : "") + ".";
+    else state = "Starting in a moment…";
+    $("offsite-state").textContent = state;
+    $("offsite-state").className = "small " + cls;
+    $("offsite-on").checked = s.on;
+    if (document.activeElement !== $("offsite-keep") && $("offsite-keep-save").hidden) $("offsite-keep").value = s.keep;
+    if (st.running) offsiteTimer = setTimeout(loadOffsite, 2000);
+  }
+  // The destinations.
+  $("offsite-kinds").replaceChildren(...v.kinds.map((k) => el("button", { type: "button", role: "radio", "aria-checked": String(k.kind === offsiteKind),
+    onclick: () => { offsiteKind = k.kind; renderOffsite(offsite); } }, k.label)));
+  const info = v.kinds.find((k) => k.kind === offsiteKind) || v.kinds[0];
+  $("offsite-kind-help").textContent = offsiteHelp[info.kind] || "";
+  for (const box of document.querySelectorAll("#offsite-form [data-how]")) box.hidden = box.dataset.how !== info.how;
+  for (const f of document.querySelectorAll("#offsite-form [data-kind]")) f.hidden = f.dataset.kind !== info.kind;
+  $("offsite-keyid-label").textContent = info.kind === "b2" ? "Key ID" : "Access key ID";
+  $("offsite-key-label").textContent = info.kind === "b2" ? "Application key" : "Secret access key";
+  $("offsite-endpoint-label").hidden = info.kind !== "s3" || $("offsite-provider").value === "AWS";
+  $("offsite-connect").textContent = info.how === "oauth" ? `Sign in to ${info.label}` : "Connect";
+  $("offsite-pass-box").hidden = !$("offsite-encrypt").checked;
+}
+
+$("offsite-encrypt").addEventListener("change", () => { $("offsite-pass-box").hidden = !$("offsite-encrypt").checked; });
+$("offsite-provider").addEventListener("change", () => offsite && renderOffsite(offsite));
+$("offsite-change").addEventListener("click", () => { offsiteChanging = true; offsiteKind = offsite.settings.kind || offsiteKind; renderOffsite(offsite); });
+$("offsite-cancel").addEventListener("click", () => { offsiteChanging = false; renderOffsite(offsite); });
+
+async function offsiteStep(fn, button) {
+  if (button) button.disabled = true;
+  showOffsiteError(null);
+  try {
+    const step = await fn();
+    if (step.step === "oauth") {
+      offsiteFlow = "oauth";
+      $("offsite-signin-name").textContent = kindLabel(offsiteKind);
+      $("offsite-signin-link").href = step.url;
+      $("offsite-paste").value = "";
+    } else if (step.step === "question") {
+      offsiteFlow = "question";
+      $("offsite-question-text").textContent = step.question.help;
+      $("offsite-answer").value = "";
+      $("offsite-answer").type = step.question.password ? "password" : "text";
+    } else {
+      offsiteFlow = null;
+      offsiteChanging = false;
+      $("offsite-pass").value = "";
+      $("offsite-apple-pass").value = "";
+      $("offsite-key").value = "";
+    }
+    await loadOffsite();
+    if (offsiteFlow === "question") $("offsite-answer").focus();
+  } catch (err) { showOffsiteError(err); }
+  finally { if (button) button.disabled = false; }
+}
+
+$("offsite-form").addEventListener("submit", (ev) => {
+  ev.preventDefault();
+  const req = {
+    kind: offsiteKind, folder: $("offsite-folder").value, keep: Number($("offsite-new-keep").value) || 3,
+    encrypt: $("offsite-encrypt").checked, passphrase: $("offsite-encrypt").checked ? $("offsite-pass").value : "",
+  };
+  if (offsiteKind === "icloud") Object.assign(req, { appleId: $("offsite-apple-id").value, password: $("offsite-apple-pass").value });
+  if (offsiteKind === "b2" || offsiteKind === "s3") Object.assign(req, { keyId: $("offsite-keyid").value, key: $("offsite-key").value, path: $("offsite-bucket").value });
+  if (offsiteKind === "s3") Object.assign(req, { provider: $("offsite-provider").value, endpoint: $("offsite-endpoint").value, region: $("offsite-region").value });
+  if (offsiteKind === "folder") req.path = $("offsite-path").value;
+  offsiteStep(() => post("/api/offsite/connect", req), $("offsite-connect"));
+});
+$("offsite-paste-form").addEventListener("submit", (ev) => {
+  ev.preventDefault();
+  offsiteStep(() => post("/api/offsite/sign-in", { address: $("offsite-paste").value }), ev.submitter);
+});
+$("offsite-answer-form").addEventListener("submit", (ev) => {
+  ev.preventDefault();
+  offsiteStep(() => post("/api/offsite/answer", { answer: $("offsite-answer").value }), ev.submitter);
+});
+$("offsite-signin-cancel").addEventListener("click", () => { offsiteFlow = null; renderOffsite(offsite); });
+
+async function offsiteOptions(on, keep) {
+  try {
+    renderOffsite(await post("/api/offsite/options", { on, keep }));
+    $("offsite-keep-save").hidden = true;
+    showOffsiteError(null);
+  } catch (err) { showOffsiteError(err); loadOffsite(); }
+}
+$("offsite-on").addEventListener("change", () => offsiteOptions($("offsite-on").checked, offsite.settings.keep));
+$("offsite-keep").addEventListener("input", () => { $("offsite-keep-save").hidden = false; });
+$("offsite-keep-save").addEventListener("click", () => offsiteOptions(offsite.settings.on, Number($("offsite-keep").value) || 3));
+$("offsite-copy-now").addEventListener("click", async () => {
+  try { renderOffsite(await post("/api/offsite/copy-now")); setTimeout(loadOffsite, 1000); } catch (err) { showOffsiteError(err); }
+});
+$("offsite-disconnect").addEventListener("click", async () => {
+  if (!confirm(`Disconnect ${kindLabel(offsite.settings.kind)}? New backups stop being copied there. The copies already there are left as they are.`)) return;
+  try { renderOffsite(await post("/api/offsite/disconnect")); } catch (err) { showOffsiteError(err); }
+});
+
+function fmtSize(n) {
+  if (n >= 1 << 30) return (n / (1 << 30)).toFixed(1) + " GB";
+  if (n >= 1 << 20) return (n / (1 << 20)).toFixed(1) + " MB";
+  return Math.max(1, Math.round(n / 1024)) + " KB";
+}
+
+async function loadOffsiteCopies() {
+  const box = $("offsite-copies");
+  $("offsite-copies-load").disabled = true;
+  box.replaceChildren(el("p", { class: "muted small" }, "Looking…"));
+  try {
+    const list = await api("/api/offsite/copies");
+    box.replaceChildren(...(list.length ? list.map((sc) => el("div", { class: "offsite-server" },
+      el("h3", {}, sc.name, sc.live ? null : el("span", { class: "badge" }, "not in the panel")),
+      el("ul", { class: "people" }, ...sc.copies.map((c) => row(whenShort(c.time), `${fmtSize(c.size)} · ${c.name.replace(/^.*-\d{8}-\d{6}-/, "").replace(".tar.gz", "").replace("-", " ")}`,
+        c.local ? el("span", { class: "muted small" }, "Also here") : btn("Download to this panel", async (ev) => {
+          const b = ev.currentTarget;
+          b.disabled = true; b.textContent = "Downloading…";
+          try {
+            await post("/api/offsite/download", { server: c.server, name: c.name });
+            b.textContent = "Downloaded";
+          } catch (err) { b.disabled = false; b.textContent = "Download to this panel"; showOffsiteError(err); }
+        })))))) : [el("p", { class: "muted small" }, "Nothing has been copied yet.")]));
+  } catch (err) { box.replaceChildren(); showOffsiteError(err); }
+  $("offsite-copies-load").disabled = false;
+}
+$("offsite-copies-load").addEventListener("click", loadOffsiteCopies);
 
 // ---- keeping a version, deleting a server ----
 

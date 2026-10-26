@@ -641,3 +641,10 @@ textarea.plain { font: inherit; background: var(--field); color: var(--text); }
   .hours-grid { grid-template-columns: max-content max-content; }
   .hours-grid .label { grid-column: 1 / -1; margin-top: 4px; }
 }
+
+/* off-site backups */
+.choice-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 10px; }
+.choice-row button[aria-checked="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); font-weight: 600; }
+.offsite-server { margin: 14px 0 0; }
+.offsite-server h3 { margin: 0 0 4px; }
+.steps-list li .row { margin-top: 6px; }

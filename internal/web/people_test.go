@@ -483,3 +483,30 @@ func TestPlayTimeIsTheOwners(t *testing.T) {
 		t.Errorf("played: %d", w.Code)
 	}
 }
+
+// Off-site backups are the owner's alone.
+func TestOffsiteIsTheOwners(t *testing.T) {
+	s, _ := newTestServer(t)
+	h := s.routes()
+	owner := ownerCookie(s)
+	call(h, "POST", "/api/users", `{"username":"Ava","password":"ava password 1"}`, owner)
+	ava := sessionFrom(t, call(h, "POST", "/api/auth/login", `{"username":"Ava","password":"ava password 1"}`))
+	for _, c := range []struct{ method, path, body string }{
+		{"GET", "/api/offsite", ""}, {"GET", "/api/offsite/copies", ""},
+		{"POST", "/api/offsite/connect", `{"kind":"folder","path":"/tmp"}`},
+		{"POST", "/api/offsite/disconnect", ""}, {"POST", "/api/offsite/download", `{"server":"x","name":"y"}`},
+	} {
+		if w := call(h, c.method, c.path, c.body, ava); w.Code != 403 {
+			t.Errorf("%s %s: %d", c.method, c.path, w.Code)
+		}
+	}
+	var v map[string]any
+	w := call(h, "GET", "/api/offsite", "", owner)
+	json.Unmarshal(w.Body.Bytes(), &v)
+	if w.Code != 200 || len(v["kinds"].([]any)) != 7 {
+		t.Errorf("owner: %d %s", w.Code, w.Body)
+	}
+	if w := call(h, "POST", "/api/offsite/download", `{"server":"../etc","name":"passwd"}`, owner); w.Code != 400 {
+		t.Errorf("a bad name: %d", w.Code)
+	}
+}

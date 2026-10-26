@@ -33,6 +33,7 @@ import (
 	"github.com/ScottSchneck/block-party/internal/activity"
 	"github.com/ScottSchneck/block-party/internal/auth"
 	"github.com/ScottSchneck/block-party/internal/notify"
+	"github.com/ScottSchneck/block-party/internal/offsite"
 	"github.com/ScottSchneck/block-party/internal/outside"
 	"github.com/ScottSchneck/block-party/internal/servers"
 )
@@ -52,6 +53,9 @@ type Options struct {
 	// Outside is outside access (friends outside the house). Tests may
 	// leave it nil; the panel then makes one that isn't running.
 	Outside *outside.Manager
+	// Offsite copies backups elsewhere; tests may leave it nil (one that
+	// isn't running is made).
+	Offsite *offsite.Manager
 	// Notifier sends notifications; tests may leave it nil (one that
 	// doesn't send is made).
 	Notifier *notify.Notifier
@@ -64,6 +68,7 @@ type Server struct {
 	auth     *auth.Store
 	activity *activity.Log
 	out      *outside.Manager
+	off      *offsite.Manager
 	notifier *notify.Notifier
 	log      *slog.Logger
 	update   panelUpdate // the newest Block Party release seen
@@ -92,6 +97,10 @@ func New(opts Options, mgr *servers.Manager) (*Server, error) {
 	s.notifier = opts.Notifier
 	if s.notifier == nil {
 		s.notifier = notify.New(notify.Options{DataDir: opts.DataDir})
+	}
+	s.off = opts.Offsite
+	if s.off == nil {
+		s.off = offsite.New(offsite.Options{DataDir: opts.DataDir, Backups: func() []offsite.LocalBackup { return nil }})
 	}
 	s.out = opts.Outside
 	if s.out == nil {
@@ -202,6 +211,7 @@ func (s *Server) routes() http.Handler {
 	s.pluginRoutes(mux)
 	s.hytaleRoutes(mux)
 	s.playtimeRoutes(mux)
+	s.offsiteRoutes(mux)
 	s.lifecycleRoutes(mux)
 	s.notifyRoutes(mux)
 	return s.secure(mux)

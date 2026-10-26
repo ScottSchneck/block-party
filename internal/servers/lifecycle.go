@@ -99,6 +99,9 @@ func (m *Manager) DeleteServer(id string) error {
 		s.filesMu.Unlock()
 		return fail(err)
 	}
+	if final != "" {
+		m.backupMade()
+	}
 	s.mu.Lock()
 	s.deleted = true
 	s.state = StateStopped

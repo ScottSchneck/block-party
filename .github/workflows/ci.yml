@@ -24,6 +24,8 @@ jobs:
       - name: Format
         run: test -z "$(gofmt -l .)" || (gofmt -l .; exit 1)
       - run: go vet ./...
+      - name: rclone, for the off-site backup tests
+        run: sudo apt-get update && sudo apt-get install -y rclone
       - run: go test -race ./...
       - run: make build fakeconsole
       - name: Console join smoke test

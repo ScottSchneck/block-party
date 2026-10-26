@@ -1,11 +1,10 @@
 package servers
 
 import (
-	"github.com/ScottSchneck/block-party/internal/notify"
-
 	"archive/tar"
 	"compress/gzip"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -19,6 +18,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/ScottSchneck/block-party/internal/notify"
 )
 
 // Backups
@@ -287,6 +288,7 @@ func (s *Server) backUp(kind string, keep int) (path string, err error) {
 			s.m.log.Warn("backup failed", "id", s.meta.ID, "kind", kind, "error", err)
 		} else {
 			s.m.log.Info("backup saved", "id", s.meta.ID, "file", filepath.Base(path))
+			s.m.backupMade()
 		}
 	}()
 
@@ -1108,6 +1110,65 @@ func extractTarGz(ctx context.Context, r io.Reader, dir string) error {
 			_ = os.Chtimes(target, hdr.ModTime, hdr.ModTime)
 		}
 	}
+}
+
+// backupMade passes on that a backup was saved.
+func (m *Manager) backupMade() {
+	if m.opts.BackupMade != nil {
+		m.opts.BackupMade()
+	}
+}
+
+// BackupFile is one backup on disk, for copying off-site.
+type BackupFile struct {
+	Server string
+	Name   string
+	Path   string
+	Time   time.Time
+	Size   int64
+}
+
+// BackupFiles lists every backup, of servers here and deleted ones.
+func (m *Manager) BackupFiles() []BackupFile {
+	var out []BackupFile
+	root := filepath.Join(m.opts.DataDir, "backups")
+	dirs, _ := os.ReadDir(root)
+	for _, d := range dirs {
+		if !d.IsDir() {
+			continue
+		}
+		files, _ := os.ReadDir(filepath.Join(root, d.Name()))
+		for _, f := range files {
+			mm := reBackupName.FindStringSubmatch(f.Name())
+			if mm == nil || mm[1] != d.Name() || !f.Type().IsRegular() {
+				continue
+			}
+			info, err := f.Info()
+			if err != nil {
+				continue
+			}
+			out = append(out, BackupFile{Server: d.Name(), Name: f.Name(), Path: filepath.Join(root, d.Name(), f.Name()), Time: info.ModTime(), Size: info.Size()})
+		}
+	}
+	return out
+}
+
+// BackupNote describes a server for its off-site backups, so it can be
+// brought back from them: the same as a deleted server's note.
+func (m *Manager) BackupNote(id string) []byte {
+	if s, ok := m.Get(id); ok {
+		s.mu.Lock()
+		meta := s.meta
+		s.mu.Unlock()
+		meta.AutoStart, meta.Outside, meta.OpenLate, meta.ClosedForHours = false, false, time.Time{}, false
+		b, _ := json.MarshalIndent(deletedNote{Meta: meta}, "", "  ")
+		return b
+	}
+	b, err := os.ReadFile(filepath.Join(m.backupsDir(id), deletedFile))
+	if err != nil {
+		return nil
+	}
+	return b
 }
 
 // ---- schedule ----

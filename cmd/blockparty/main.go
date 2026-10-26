@@ -23,6 +23,7 @@ import (
 
 	"github.com/ScottSchneck/block-party/internal/auth"
 	"github.com/ScottSchneck/block-party/internal/notify"
+	"github.com/ScottSchneck/block-party/internal/offsite"
 	"github.com/ScottSchneck/block-party/internal/outside"
 	"github.com/ScottSchneck/block-party/internal/serverlist"
 	"github.com/ScottSchneck/block-party/internal/servers"
@@ -74,9 +75,15 @@ func main() {
 
 	// Game servers.
 	notifier := notify.New(notify.Options{DataDir: cfg.DataDir})
+	var off *offsite.Manager // set below; new backups are copied off-site
 
 	mgr := servers.New(servers.Options{
-		Notify:      notifier.Send,
+		Notify: notifier.Send,
+		BackupMade: func() {
+			if off != nil {
+				off.Soon()
+			}
+		},
 		DataDir:     cfg.DataDir,
 		DownloadAPI: os.Getenv("BEDROCK_DOWNLOAD_API"),
 		Version:     version,
@@ -99,6 +106,23 @@ func main() {
 		slog.Error("could not read the servers folder", "error", err)
 		os.Exit(1)
 	}
+	// Off-site copies of the backups.
+	off = offsite.New(offsite.Options{
+		DataDir: cfg.DataDir,
+		Rclone:  envOr("RCLONE", "rclone"),
+		Backups: func() []offsite.LocalBackup {
+			var out []offsite.LocalBackup
+			for _, b := range mgr.BackupFiles() {
+				out = append(out, offsite.LocalBackup{Server: b.Server, Name: b.Name, Path: b.Path, Time: b.Time, Size: b.Size})
+			}
+			return out
+		},
+		Note: mgr.BackupNote,
+		Live: func(id string) bool { _, ok := mgr.Get(id); return ok },
+		Failed: func(title, text string) {
+			notifier.Send(notify.Event{Kind: notify.BackupFailed, Title: title, Text: text, Key: "offsite"})
+		},
+	})
 	zone, _ := time.Now().Zone()
 	slog.Info("scheduled backups use the container's time zone; set TZ to change it", "timeZone", time.Local.String(), "abbrev", zone, "now", time.Now().Format("15:04"))
 
@@ -187,6 +211,7 @@ func main() {
 		ListName: cfg.ListName,
 		Version:  version,
 		Outside:  out,
+		Offsite:  off,
 		Notifier: notifier,
 	}, mgr)
 	if err != nil {
@@ -196,10 +221,14 @@ func main() {
 
 	var wg sync.WaitGroup
 	failed := make(chan error, 2)
-	wg.Add(4)
+	wg.Add(5)
 	go func() {
 		defer wg.Done()
 		out.Run(ctx)
+	}()
+	go func() {
+		defer wg.Done()
+		off.Run(ctx)
 	}()
 	go func() {
 		defer wg.Done()

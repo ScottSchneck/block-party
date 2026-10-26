@@ -962,6 +962,9 @@ func (s *Server) update() error {
 		} else {
 			path, err = backup(s.m.ctx, s.dir(), s.m.backupsDir(s.meta.ID), s.meta.ID, "before-update", updateBackups)
 		}
+		if err == nil {
+			s.m.backupMade()
+		}
 		if err != nil {
 			return fmt.Errorf("backup failed, so nothing was changed: %w", err)
 		}

@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.4.0
+
+- **Off-site backups** (Settings → Off-site backups): every new backup is
+  also copied to Google Drive, iCloud Drive, OneDrive, Dropbox, Backblaze
+  B2, Amazon S3 or a compatible service (Cloudflare R2, Wasabi, MinIO…), or
+  another disk or share. The newest few of each server are kept there,
+  optionally encrypted with your passphrase. Download any copy back to
+  restore it, or to bring a server back after a new install. You're
+  notified if copying fails.
+- The container now includes rclone 1.75.2.
+
 ## 1.3.0
 
 - **Play time** (Settings → Play time): how long each kid plays today and

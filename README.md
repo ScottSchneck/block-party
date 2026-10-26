@@ -47,6 +47,9 @@ PS5, and the panel runs a family's servers day to day. See the
   using Bedrock's own save hold, so nobody gets kicked. A restore backs up the
   current world first, so it can be undone. Servers nobody has played on since
   their last backup are skipped. See [Backups](#backups).
+- **Off-site backups** to Google Drive, iCloud Drive, OneDrive, Dropbox,
+  Backblaze B2, S3-compatible storage or another disk, optionally
+  encrypted. See [Off-site backups](#off-site-backups).
 - **Import from Crafty Controller** (or any folder of Bedrock servers). Each
   server is copied in with its worlds, settings, allowlist and operators, and
   keeps its port. The original is only read, never changed. See
@@ -571,7 +574,42 @@ and the settings files (`server.properties`, allowlist, permissions).
 - Set `TZ` (for example `-e TZ=America/Denver`) so "04:00" is your 4 am; the
   container is on UTC otherwise.
 
-For copies somewhere else, have Unraid's backup tool (or anything else) copy
+### Off-site backups
+
+**Settings → Off-site backups** (owner only) copies every new backup
+somewhere else, so a failed array, a fire or a mistake can't take the worlds
+and their backups together. It uses [rclone](https://rclone.org), which is in
+the container.
+
+| Where | How it connects |
+| --- | --- |
+| Google Drive | Sign in on Google's page. Block Party can only see the files it puts there. |
+| iCloud Drive | Apple ID, password and the code Apple shows on your devices. Advanced Data Protection must be off and "Access iCloud Data on the Web" on. Apple asks you to sign in again now and then; you're notified when copies stop. |
+| OneDrive | Sign in on Microsoft's page (personal, or work or school). |
+| Dropbox | Sign in on Dropbox's page. |
+| Backblaze B2 | A key ID, an application key and a bucket. |
+| Amazon S3 or compatible | Cloudflare R2, Wasabi, MinIO and others: an access key, a bucket and the endpoint. |
+| Another disk or share | A path in the container: add one in the container's settings (Container Path `/offsite`, Host Path a share on another disk or a USB drive). |
+
+Signing in to Google, Microsoft or Dropbox ends on a page that won't load
+(`127.0.0.1` or `localhost`): that's expected. Copy the address from the
+address bar and paste it into the panel.
+
+- Backups are copied as soon as they're made (and checked every 6 hours),
+  into a folder (**Block Party** by default) with one folder per server.
+  The newest 3 of each server are kept there; change that on the page.
+- **Encrypt them before they leave** encrypts the files and their names with
+  a passphrase of your choice. Keep it somewhere safe: without it nobody can
+  read them, you included.
+- If copying fails you get a notification (the "backup fails" kind), and the
+  panel tries again every 15 minutes.
+- **What's off-site** lists the copies. **Download to this panel** puts one
+  back in the server's backups to restore. After a new install, connect the
+  same place, download a server's newest backup, and bring it back from
+  **Backups → Deleted servers**: each server's details are copied with its
+  backups.
+
+You can also have Unraid's backup tool (or anything else) copy
 `/mnt/user/appdata/blockparty/data/backups`.
 
 ### `servers.json`

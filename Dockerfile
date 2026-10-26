@@ -10,6 +10,21 @@ RUN go mod tidy && \
     CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" \
       -o /out/blockparty ./cmd/blockparty
 
+# ---- rclone, for off-site backups ----
+# The official release, checked against its published SHA-256.
+FROM debian:bookworm-slim AS rclone
+ARG TARGETARCH
+ARG RCLONE_VERSION=1.75.2
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl unzip && \
+    case "${TARGETARCH:-amd64}" in \
+      amd64) sum=349ac8fba6ff65d6247043f1750cdcb518ec5d500ef91463a10d37c0ccdf3702 ;; \
+      arm64) sum=7e1e8d69654941b7b7df84ee74c5f7fb09cce7d5496947fb7bf16b55ff427d10 ;; \
+      *) echo "no rclone for ${TARGETARCH}" && exit 1 ;; \
+    esac && \
+    curl -fsSL -o /tmp/rclone.zip "https://github.com/rclone/rclone/releases/download/v${RCLONE_VERSION}/rclone-v${RCLONE_VERSION}-linux-${TARGETARCH:-amd64}.zip" && \
+    echo "${sum}  /tmp/rclone.zip" | sha256sum -c - && \
+    unzip -j /tmp/rclone.zip "*/rclone" -d /out && chmod 755 /out/rclone
+
 # ---- Run ----
 # Debian rather than Alpine: Mojang's Bedrock server needs the standard GNU C
 # library and libcurl, which Alpine doesn't have.
@@ -19,6 +34,7 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/* && \
     mkdir -p /config /data && chown 99:100 /config /data
 COPY --from=build /out/blockparty /usr/local/bin/blockparty
+COPY --from=rclone /out/rclone /usr/local/bin/rclone
 # Lets the panel use port 53 (DNS) without running as root.
 RUN setcap cap_net_bind_service=+ep /usr/local/bin/blockparty
 # The panel runs as nobody:users (99:100, the owner Unraid uses for appdata),
