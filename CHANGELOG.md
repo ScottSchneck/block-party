@@ -2,6 +2,11 @@
 
 ## 1.4.0
 
+- **The console server list works with Minecraft 1.26.60.** Consoles and
+  phones on the new version were told the list was outdated. The list now
+  speaks 1.26.60, and accepts 1.26.60 consoles joining over NetherNet by
+  address (gophertunnel 1.63 and its newest fix, go-nethernet 1.0.26).
+  Thanks to the Unraid forum for the heads-up.
 - **Off-site backups** (Settings → Off-site backups): every new backup is
   also copied to Google Drive, iCloud Drive, OneDrive, Dropbox, Backblaze
   B2, Amazon S3 or a compatible service (Cloudflare R2, Wasabi, MinIO…), or
