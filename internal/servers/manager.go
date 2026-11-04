@@ -87,6 +87,7 @@ type Manager struct {
 	history       *playHistory
 	playtime      *playtime
 	metrics       *metricStore
+	tasks         *taskState
 }
 
 // Meta is what the panel remembers about a server between restarts.
@@ -147,6 +148,8 @@ type Meta struct {
 	Hours          *Hours    `json:"hours,omitempty"`
 	OpenLate       time.Time `json:"openLate,omitempty"`
 	ClosedForHours bool      `json:"closedForHours,omitempty"`
+	// Tasks are its scheduled tasks.
+	Tasks []Task `json:"tasks,omitempty"`
 }
 
 // The name is from before the panel was called Block Party; it stays so
@@ -180,7 +183,7 @@ func New(opts Options) *Manager {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	m := &Manager{opts: opts, log: opts.Log.With("src", "servers"), servers: map[string]*Server{}, ctx: ctx, cancel: cancel, people: newPeople(opts.DataDir),
-		history: newPlayHistory(opts.DataDir), metrics: newMetricStore(opts.DataDir)}
+		history: newPlayHistory(opts.DataDir), metrics: newMetricStore(opts.DataDir), tasks: newTaskState()}
 	m.playtime = newPlaytime(m)
 	return m
 }

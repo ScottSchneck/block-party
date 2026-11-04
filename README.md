@@ -75,6 +75,12 @@ PS5, and the panel runs a family's servers day to day. See the
   computer's processor and memory it uses, and how many players were on,
   over the last hour, day or week (a reading every 15 seconds, kept for a
   week in `/data/metrics`). Point at a graph to see the value at that time.
+- **Scheduled tasks** for each server (Tasks tab): restart every night,
+  send a message every hour, run console commands, start, stop or back up,
+  at a time on chosen days, every so often, on a cron schedule, or a while
+  after another task. Restarts and stops can warn players first, and any
+  task can wait until nobody is playing. Anyone who takes care of a server
+  can set them up.
 - **Notifications** to your phone (ntfy), a Discord channel, email, or text
   messages (Twilio), in any combination, each with its own choice of events:
   someone wants to join, a server crashes, a backup fails, and more. See

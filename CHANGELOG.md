@@ -6,6 +6,12 @@
   memory use and the players on it, over the last hour, day or week. Point
   at a graph (or tap it) to see the value at that time; "Show as a table"
   lists the now, average and highest. Readings are kept for a week.
+- **Scheduled tasks** (a server's Tasks tab): restart every night, send a
+  message every hour, run console commands, start, stop or back up. At a
+  time on chosen days, every so often, on a cron schedule, or a while after
+  another task (a chain, like a message and then a restart). Restarts and
+  stops can warn players first, and any task can be skipped while someone
+  is playing. Anyone who takes care of the server can set them up.
 - Fixed the word "null" showing after the port at the top of a server's
   page when the server has no open hours.
 

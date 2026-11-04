@@ -334,6 +334,7 @@ function renderDetailHead(s) {
   for (const t of ["players", "settings", "addons", "backups"]) $("tab-" + t).hidden = copying;
   $("tab-addons").hidden = copying || (s.type && s.type !== "bedrock"); // Bedrock add-ons
   $("tab-plugins").hidden = copying || s.type !== "java" || access(s) < CARE; // Java plugins
+  $("tab-tasks").hidden = copying || access(s) < CARE;
   $("ov-backups-link").textContent = access(s) >= CARE ? "Restore or download" : "See backups";
 }
 
@@ -420,7 +421,7 @@ function route() {
   }
   if (next === "server") {
     const id = parts[1];
-    const t = ["overview", "players", "settings", "addons", "plugins", "backups", "console"].includes(parts[2]) ? parts[2] : "overview";
+    const t = ["overview", "players", "settings", "addons", "plugins", "backups", "tasks", "console"].includes(parts[2]) ? parts[2] : "overview";
     if (!id) { location.hash = "#/"; return; }
     const known = serverList.find((x) => x.id === id);
     if (known && access(known) < RUN) { location.hash = "#/"; return; }
@@ -432,6 +433,7 @@ function route() {
       resetBackups();
       resetAddons();
       resetPlugins();
+      resetTasks();
       clearServerPanes();
       selected = id;
       $("detail-name").textContent = "";
@@ -441,7 +443,8 @@ function route() {
       if (s) renderDetailHead(s);
     }
     const s = serverList.find((x) => x.id === id);
-    let tabOK = !(s && s.state === "importing" && ["players", "settings", "addons", "plugins", "backups"].includes(t));
+    let tabOK = !(s && s.state === "importing" && ["players", "settings", "addons", "plugins", "backups", "tasks"].includes(t));
+    if (s && t === "tasks" && access(s) < CARE) tabOK = false;
     if (s && t === "plugins" && (s.type !== "java" || access(s) < CARE)) tabOK = false;
     if (s && t === "addons" && s.type && s.type !== "bedrock") tabOK = false;
     acceptedHash = location.hash;
@@ -496,7 +499,7 @@ function setView(v) {
 
 function showTab(which) {
   tab = which;
-  for (const t of ["overview", "players", "settings", "addons", "plugins", "backups", "console"]) {
+  for (const t of ["overview", "players", "settings", "addons", "plugins", "backups", "tasks", "console"]) {
     const a = $("tab-" + t);
     a.href = serverHref(selected, t);
     if (t === which) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
@@ -510,6 +513,7 @@ function showTab(which) {
   else if (which === "addons") loadAddons();
   else if (which === "plugins") loadPlugins();
   else if (which === "players") loadPlayers();
+  else if (which === "tasks") loadTasks();
   else loadOverview();
 }
 
@@ -1268,6 +1272,213 @@ $("add-form").addEventListener("submit", async (ev) => {
   } catch (err) {
     $("add-error").textContent = err.message;
     $("add-error").hidden = false;
+  }
+});
+
+// ---- tasks tab ----
+
+let tasksFor = null;
+let tasksView = [];
+let taskEditing = null; // the task being changed; {} for a new one
+
+function resetTasks() {
+  tasksFor = null;
+  tasksView = [];
+  closeTaskForm();
+  $("tasks-list").replaceChildren();
+  $("tasks-error").hidden = true;
+}
+
+const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+function fmtTaskClock(hhmm) {
+  const [h, m] = hhmm.split(":").map(Number);
+  return new Date(2000, 0, 1, h, m).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
+function plural(n, one) { return `${n} ${one}${n === 1 ? "" : "s"}`; }
+
+function describeWhen(t) {
+  const sc = t.schedule;
+  if (sc.kind === "every") {
+    const n = sc.every;
+    if (n % 1440 === 0) return n === 1440 ? "Every day" : `Every ${n / 1440} days`;
+    if (n % 60 === 0) return n === 60 ? "Every hour" : `Every ${n / 60} hours`;
+    return n === 1 ? "Every minute" : `Every ${n} minutes`;
+  }
+  if (sc.kind === "daily") {
+    const days = (sc.days || []).slice().sort();
+    let which = "Every day";
+    if (days.length && days.length < 7) {
+      const key = days.join("");
+      which = key === "12345" ? "Weekdays" : key === "06" ? "Weekends" : days.map((d) => dayNames[d]).join(", ");
+    }
+    return `${which} at ${fmtTaskClock(sc.at)}`;
+  }
+  if (sc.kind === "after") {
+    const other = tasksView.find((x) => x.id === sc.after);
+    const name = other ? `“${other.name}”` : "another task";
+    return sc.delay ? `${plural(sc.delay, "minute")} after ${name}` : `Right after ${name}`;
+  }
+  if (sc.kind === "cron") return `Cron: ${sc.cron}`;
+  return "";
+}
+
+function describeWhat(t) {
+  switch (t.action) {
+    case "command": { const lines = t.command.split("\n"); return lines.length === 1 ? `Runs “${lines[0]}”` : `Runs ${lines.length} commands`; }
+    case "restart": return "Restarts" + (t.warn ? ` (warns ${plural(t.warn, "minute")} before)` : "");
+    case "stop": return "Stops" + (t.warn ? ` (warns ${plural(t.warn, "minute")} before)` : "");
+    case "start": return "Starts";
+    case "backup": return "Backs up";
+  }
+  return "";
+}
+
+function fmtNext(iso) {
+  const d = new Date(iso), now = new Date();
+  const time = d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  const days = Math.round((new Date(d.toDateString()) - new Date(now.toDateString())) / 86400000);
+  if (days === 0) return `today at ${time}`;
+  if (days === 1) return `tomorrow at ${time}`;
+  if (days < 7) return `${d.toLocaleDateString([], { weekday: "long" })} at ${time}`;
+  return d.toLocaleDateString([], { month: "short", day: "numeric" }) + ` at ${time}`;
+}
+
+async function loadTasks() {
+  if (!selected) return;
+  const id = selected;
+  try {
+    const v = await api(sid() + "/tasks");
+    if (id !== selected) return;
+    tasksFor = id;
+    renderTasks(v.tasks || []);
+    $("tasks-error").hidden = true;
+  } catch (err) {
+    if (id === selected) { $("tasks-error").textContent = err.message; $("tasks-error").hidden = false; }
+  }
+}
+
+async function tasksCall(fn) {
+  const id = selected;
+  try {
+    const v = await fn();
+    if (id !== selected) return true;
+    renderTasks(v.tasks || []);
+    $("tasks-error").hidden = true;
+    return true;
+  } catch (err) {
+    if (id === selected) { $("tasks-error").textContent = err.message; $("tasks-error").hidden = false; }
+    return false;
+  }
+}
+
+function renderTasks(list) {
+  tasksView = list;
+  $("task-ideas").hidden = list.length > 2;
+  $("tasks-list").replaceChildren(...(list.length ? list.map((t) => {
+    const bits = [describeWhen(t)];
+    if (t.skipIfPlaying) bits.push("not while someone plays");
+    const status = t.running ? "Running now…"
+      : !t.enabled ? "Off"
+      : t.next ? `Next: ${fmtNext(t.next)}` : "Waits for the task it follows";
+    const last = t.lastRun ? `Last: ${t.lastResult} (${whenShort(t.lastRun).toLowerCase()})` : "Hasn't run yet";
+    const toggle = el("label", { class: "switch" }, el("input", { type: "checkbox", checked: t.enabled, "aria-label": `${t.name} on`,
+      onchange: (ev) => tasksCall(() => post(sid() + "/tasks", { ...t, enabled: ev.target.checked })) }), el("span", {}, "On"));
+    return el("li", {},
+      el("span", { class: "who" }, el("b", {}, t.name), el("small", {}, `${describeWhat(t)} · ${bits.join(" · ")}`),
+        el("small", { class: /^failed/.test(t.lastResult || "") ? "warn" : "" }, `${status} · ${last}`)),
+      toggle,
+      btn("Run now", () => tasksCall(() => post(`${sid()}/tasks/${encodeURIComponent(t.id)}/run`)), "", t.running),
+      btn("Change", () => openTaskForm(t)),
+      btn("Remove", () => { if (confirm(`Remove the task “${t.name}”?`)) tasksCall(() => del(`${sid()}/tasks/${encodeURIComponent(t.id)}`)); }, "danger"));
+  }) : [emptyRow("No tasks yet.")]));
+}
+
+function taskFormShow() {
+  const action = $("task-action").value, kind = $("task-kind").value;
+  $("task-command-label").hidden = action !== "command";
+  $("task-warn-label").hidden = action !== "restart" && action !== "stop";
+  for (const k of ["daily", "every", "after", "cron"]) $("task-" + k).hidden = k !== kind;
+}
+
+function openTaskForm(t) {
+  taskEditing = t || {};
+  const sc = (t && t.schedule) || { kind: "daily", at: "04:00", days: [] };
+  $("task-form-title").textContent = t && t.id ? `Change “${t.name}”` : "New task";
+  $("task-name").value = (t && t.name) || "";
+  $("task-action").value = (t && t.action) || "command";
+  $("task-command").value = (t && t.command) || "";
+  $("task-warn").value = String((t && t.warn) || 0);
+  $("task-kind").value = sc.kind;
+  $("task-at").value = sc.at || "04:00";
+  for (const c of document.querySelectorAll("#task-daily [data-day]")) c.checked = !(sc.days && sc.days.length) || sc.days.includes(Number(c.dataset.day));
+  const every = sc.every || 60;
+  const unit = every % 1440 === 0 ? 1440 : every % 60 === 0 ? 60 : 1;
+  $("task-every-unit").value = String(unit);
+  $("task-every-n").value = String(every / unit);
+  $("task-delay").value = String(sc.delay || 0);
+  const others = tasksView.filter((x) => !t || x.id !== t.id);
+  $("task-after-id").replaceChildren(...(others.length ? others.map((x) => el("option", { value: x.id }, x.name)) : [el("option", { value: "" }, "(add another task first)")]));
+  if (sc.after) $("task-after-id").value = sc.after;
+  $("task-cron-text").value = sc.cron || "";
+  $("task-skip").checked = !!(t && t.skipIfPlaying);
+  $("task-enabled").checked = !t || t.enabled !== false;
+  $("task-form-error").hidden = true;
+  taskFormShow();
+  $("task-form").hidden = false;
+  $("tasks-card").hidden = true;
+  $("task-name").focus();
+}
+
+function closeTaskForm() {
+  taskEditing = null;
+  $("task-form").hidden = true;
+  $("tasks-card").hidden = false;
+}
+
+$("task-action").addEventListener("change", taskFormShow);
+$("task-kind").addEventListener("change", taskFormShow);
+$("task-add").addEventListener("click", () => openTaskForm(null));
+$("task-cancel").addEventListener("click", closeTaskForm);
+const taskIdeas = {
+  restart: { name: "Nightly restart", action: "restart", warn: 5, schedule: { kind: "daily", at: "04:00", days: [] } },
+  say: { name: "Water break", action: "command", command: "say Time for a water break!", schedule: { kind: "every", every: 60 } },
+  weekend: { name: "Off on school nights", action: "stop", warn: 10, schedule: { kind: "daily", at: "20:30", days: [0, 1, 2, 3, 4] } },
+};
+for (const b of document.querySelectorAll("[data-idea]")) {
+  b.addEventListener("click", () => openTaskForm({ ...taskIdeas[b.dataset.idea], enabled: true }));
+}
+$("task-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const kind = $("task-kind").value;
+  const days = [...document.querySelectorAll("#task-daily [data-day]")].filter((c) => c.checked).map((c) => Number(c.dataset.day));
+  if (kind === "daily" && !days.length) { $("task-form-error").textContent = "Choose at least one day."; $("task-form-error").hidden = false; return; }
+  const body = {
+    id: taskEditing && taskEditing.id || "",
+    name: $("task-name").value.trim(),
+    enabled: $("task-enabled").checked,
+    action: $("task-action").value,
+    command: $("task-command").value,
+    warn: Number($("task-warn").value),
+    skipIfPlaying: $("task-skip").checked,
+    schedule: {
+      kind,
+      at: $("task-at").value,
+      days: days.length === 7 ? [] : days,
+      every: Math.round(Number($("task-every-n").value) * Number($("task-every-unit").value)),
+      after: $("task-after-id").value,
+      delay: Number($("task-delay").value),
+      cron: $("task-cron-text").value.trim(),
+    },
+  };
+  const id = selected;
+  try {
+    const v = await post(sid() + "/tasks", body);
+    if (id !== selected) return;
+    closeTaskForm();
+    renderTasks(v.tasks || []);
+  } catch (err) {
+    $("task-form-error").textContent = err.message;
+    $("task-form-error").hidden = false;
   }
 });
 
@@ -3145,6 +3356,7 @@ function enterApp(st) {
     setInterval(() => { if (onServer("players")) loadPlayers(); }, 3000),
     setInterval(() => { if (onServer("backups")) loadBackups(); }, 3000),
     setInterval(() => { if (onServer("overview")) loadOverview(); }, 10000),
+    setInterval(() => { if (onServer("tasks") && $("task-form").hidden) loadTasks(); }, 10000),
     setInterval(checkUpdates, 10 * 60 * 1000),
     setInterval(loadJoinInfo, 30 * 60 * 1000),
     setInterval(loadMyTime, 60 * 1000),

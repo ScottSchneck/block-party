@@ -814,6 +814,7 @@
         <a id="tab-addons" href="#" data-tab="addons">Add-ons</a>
         <a id="tab-plugins" href="#" data-tab="plugins" hidden>Plugins</a>
         <a id="tab-backups" href="#" data-tab="backups">Backups</a>
+        <a id="tab-tasks" href="#" data-tab="tasks" hidden>Tasks</a>
         <a id="tab-console" href="#" data-tab="console">Console</a>
       </nav>
 
@@ -1138,6 +1139,95 @@
           <p id="backups-summary" class="muted small"></p>
           <ul id="backups" class="people"></ul>
         </div>
+      </div>
+
+      <div id="pane-tasks" hidden>
+        <p id="tasks-error" class="error" hidden></p>
+        <section class="card" id="tasks-card">
+          <div class="row between">
+            <h3>Scheduled tasks</h3>
+            <button type="button" id="task-add" class="primary">Add a task</button>
+          </div>
+          <p class="muted small">Things the server does by itself: restart every night, send a message every hour, run commands, start and stop at set times. A task can also follow another one, like a warning and then a restart. Times are the panel's time zone.</p>
+          <ul id="tasks-list" class="people"></ul>
+          <div class="row" id="task-ideas">
+            <span class="muted small">Ideas:</span>
+            <button type="button" data-idea="restart">Restart every night</button>
+            <button type="button" data-idea="say">A message every hour</button>
+            <button type="button" data-idea="weekend">Off on school nights</button>
+          </div>
+        </section>
+
+        <form id="task-form" class="card task-form" hidden>
+          <h3 id="task-form-title">New task</h3>
+          <label>Name
+            <input id="task-name" maxlength="60" required autocomplete="off" placeholder="Nightly restart">
+          </label>
+          <label>What it does
+            <select id="task-action">
+              <option value="command">Run console commands</option>
+              <option value="restart">Restart the server</option>
+              <option value="stop">Stop the server</option>
+              <option value="start">Start the server</option>
+              <option value="backup">Back up the server</option>
+            </select>
+          </label>
+          <label id="task-command-label">Commands, one per line
+            <textarea id="task-command" rows="3" class="mono" spellcheck="false" placeholder="say Remember to drink some water!"></textarea>
+          </label>
+          <label id="task-warn-label">Warn players first
+            <select id="task-warn">
+              <option value="0">No warning</option>
+              <option value="1">1 minute before</option>
+              <option value="5">5 minutes before</option>
+              <option value="10">10 minutes before</option>
+              <option value="15">15 minutes before</option>
+            </select>
+          </label>
+          <label>When
+            <select id="task-kind">
+              <option value="daily">At a time of day</option>
+              <option value="every">Every so often</option>
+              <option value="after">After another task</option>
+              <option value="cron">Cron schedule (advanced)</option>
+            </select>
+          </label>
+          <div id="task-daily" class="task-when">
+            <label class="inline">at <input id="task-at" type="time" value="04:00"></label>
+            <div class="days" role="group" aria-label="Days">
+              <label class="check inline"><input type="checkbox" data-day="1"><span>Mon</span></label>
+              <label class="check inline"><input type="checkbox" data-day="2"><span>Tue</span></label>
+              <label class="check inline"><input type="checkbox" data-day="3"><span>Wed</span></label>
+              <label class="check inline"><input type="checkbox" data-day="4"><span>Thu</span></label>
+              <label class="check inline"><input type="checkbox" data-day="5"><span>Fri</span></label>
+              <label class="check inline"><input type="checkbox" data-day="6"><span>Sat</span></label>
+              <label class="check inline"><input type="checkbox" data-day="0"><span>Sun</span></label>
+            </div>
+          </div>
+          <div id="task-every" class="task-when row">
+            <label class="inline">every <input id="task-every-n" type="number" min="1" max="10080" value="1" class="port"></label>
+            <select id="task-every-unit" aria-label="Unit">
+              <option value="1">minutes</option>
+              <option value="60" selected>hours</option>
+              <option value="1440">days</option>
+            </select>
+          </div>
+          <div id="task-after" class="task-when row">
+            <label class="inline"><input id="task-delay" type="number" min="0" max="1440" value="0" class="port"> minutes after</label>
+            <select id="task-after-id" aria-label="Task it follows"></select>
+          </div>
+          <div id="task-cron" class="task-when">
+            <input id="task-cron-text" class="mono" placeholder="0 4 * * *" autocomplete="off" spellcheck="false" aria-label="Cron schedule">
+            <p class="muted small">Five parts: minute, hour, day of the month, month, day of the week (0 is Sunday). <span class="mono">0 4 * * *</span> is 4:00 every day; <span class="mono">*/30 16-20 * * 1-5</span> is every half hour from 4 to 8 pm on weekdays.</p>
+          </div>
+          <label class="check"><input id="task-skip" type="checkbox"><span>Skip it while someone is playing</span></label>
+          <label class="check"><input id="task-enabled" type="checkbox" checked><span>On</span></label>
+          <p id="task-form-error" class="error" hidden></p>
+          <div class="row">
+            <button type="submit" class="primary">Save</button>
+            <button type="button" id="task-cancel">Cancel</button>
+          </div>
+        </form>
       </div>
 
       <div id="pane-console" hidden>

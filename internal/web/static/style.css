@@ -669,3 +669,12 @@ textarea.plain { font: inherit; background: var(--field); color: var(--text); }
 .use-tip span { color: var(--muted); }
 .use-table { margin-top: 12px; }
 .use-table summary { cursor: pointer; font-size: 13px; color: var(--muted); }
+
+/* scheduled tasks */
+.task-form { display: grid; gap: 12px; }
+.task-form h3 { margin: 0; }
+.task-form textarea { width: 100%; }
+.task-when { display: grid; gap: 10px; padding-left: 2px; }
+.task-when.row { display: flex; }
+.days { display: flex; flex-wrap: wrap; gap: 6px 14px; }
+#task-ideas { margin-top: 10px; }
