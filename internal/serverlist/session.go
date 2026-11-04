@@ -1,6 +1,7 @@
 package serverlist
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"net"
@@ -66,7 +67,11 @@ func handleSession(cfg *Config, l *minecraft.Listener, conn *minecraft.Conn, tra
 	connected := time.Now()
 	logTimeline := func(outcome string) {
 		if steps := takeTimeline(conn.LocalAddr(), conn.RemoteAddr()); steps != "" {
-			log.Info("load timeline", "outcome", outcome, "steps", steps)
+			level := slog.LevelInfo // a console that didn't get the menu
+			if outcome == "menu shown" {
+				level = slog.LevelDebug
+			}
+			log.Log(context.Background(), level, "load timeline", "outcome", outcome, "steps", steps)
 		}
 	}
 
@@ -92,8 +97,6 @@ func handleSession(cfg *Config, l *minecraft.Listener, conn *minecraft.Conn, tra
 		}
 	}()
 
-	finishRescue := rescueViewDistance(conn, cfg, log)
-
 	err := conn.StartGameTimeout(minecraft.GameData{
 		WorldName:        "Server list",
 		EntityUniqueID:   1,
@@ -114,7 +117,6 @@ func handleSession(cfg *Config, l *minecraft.Listener, conn *minecraft.Conn, tra
 		ChunkRadius:             cfg.LoadChunkRange,
 		UseBlockNetworkIDHashes: true,
 	}, 30*time.Second)
-	finishRescue()
 	if err != nil {
 		log.Warn("could not start the menu world", "error", err)
 		logTimeline("menu world did not load")
@@ -186,79 +188,6 @@ func handleSession(cfg *Config, l *minecraft.Listener, conn *minecraft.Conn, tra
 			time.Sleep(2 * time.Second)
 			return
 		}
-	}
-}
-
-// rescueViewDistance works around a timing gap in gophertunnel v1.62.0.
-// Conn.StartGame sends StartGame and only afterwards marks the console's
-// view-distance request as expected. A request that arrives inside that gap is
-// set aside for ReadPacket instead of being answered, and both sides then wait
-// until the join times out. Over loopback that happened in about 1 of 10 joins;
-// consoles answer more slowly, but a busy host can still widen the gap.
-//
-// This waits for the request to arrive. If the library hasn't answered it
-// shortly after, the request must be the one set aside, so it is taken with
-// ReadPacket (which returns set-aside packets straight away) and answered here
-// the same way the library would. Nothing else reads the connection until
-// StartGame returns, and StartGame can't return before the answer is sent.
-//
-// Call it just before StartGame: it starts watching straight away and does the
-// rest on its own goroutine. Call the returned function once StartGame has
-// returned; it waits for the rescue to finish, so the session can then read
-// the connection and set its deadline without racing it.
-func rescueViewDistance(conn *minecraft.Conn, cfg *Config, log *slog.Logger) (finish func()) {
-	local, remote := conn.LocalAddr(), conn.RemoteAddr()
-	requested, stop1 := waitForPacket(remote, local, packet.IDRequestChunkRadius)
-	answered, stop2 := waitForPacket(local, remote, packet.IDChunkRadiusUpdated)
-	started, done := make(chan struct{}), make(chan struct{})
-	go func() {
-		defer close(done)
-		defer stop1()
-		defer stop2()
-		rescue(conn, cfg, log, requested, answered, started)
-	}()
-	return func() {
-		close(started)
-		<-done
-	}
-}
-
-func rescue(conn *minecraft.Conn, cfg *Config, log *slog.Logger, requested, answered, started <-chan struct{}) {
-	select {
-	case <-requested:
-	case <-answered:
-		return
-	case <-started:
-		return
-	}
-	select {
-	case <-answered:
-		return // the normal case
-	case <-started:
-		return
-	case <-time.After(500 * time.Millisecond):
-	}
-	// The session sets its own deadline after this returns.
-	_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-	for {
-		pk, err := conn.ReadPacket()
-		if err != nil {
-			log.Warn("could not recover the console's view-distance request", "error", err)
-			return
-		}
-		if p, ok := pk.(*packet.RequestChunkRadius); ok {
-			radius := p.ChunkRadius
-			if cfg.LoadChunkRange != 0 {
-				radius = cfg.LoadChunkRange
-			}
-			_ = conn.WritePacket(&packet.ChunkRadiusUpdated{ChunkRadius: radius})
-			_ = conn.WritePacket(&packet.PlayStatus{Status: packet.PlayStatusPlayerSpawn})
-			_ = conn.WritePacket(&packet.CreativeContent{})
-			_ = conn.Flush()
-			log.Debug("answered a view-distance request the library set aside")
-			return
-		}
-		// Anything else set aside before spawning isn't needed by the menu.
 	}
 }
 

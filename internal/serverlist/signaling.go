@@ -98,8 +98,9 @@ func (l *chanListener) Addr() net.Addr { return l.addr }
 
 // startSignaling serves the NetherNet join endpoint (GET /v1/join and
 // POST /v1/join/{id}) on TCP ListPort and on each extra port, in the mode
-// chosen by SIGNALING. Every TCP connection is logged, so the log shows
-// where a console tries to reach us even if it never sends a request.
+// chosen by SIGNALING. With LOG_LEVEL=debug every TCP connection is logged,
+// so the log shows where a console tries to reach us even if it never sends
+// a request.
 func startSignaling(cfg *Config, handler http.Handler) error {
 	var cert tls.Certificate
 	serveTLS := cfg.Signaling == "auto" || cfg.Signaling == "tls"
@@ -168,7 +169,8 @@ func serveSignalingPort(cfg *Config, ln net.Listener, port int, handler http.Han
 	go func() { _ = srv.Serve(tls.NewListener(tlsRaw, tcfg)) }()
 }
 
-// loggingListener logs every TCP connection before anything is read from it.
+// loggingListener logs every TCP connection (at debug level) before anything
+// is read from it.
 type loggingListener struct {
 	net.Listener
 	port int
@@ -177,7 +179,7 @@ type loggingListener struct {
 func (l loggingListener) Accept() (net.Conn, error) {
 	c, err := l.Listener.Accept()
 	if err == nil {
-		slog.Info("TCP connection", "from", c.RemoteAddr(), "port", l.port)
+		slog.Debug("TCP connection", "from", c.RemoteAddr(), "port", l.port)
 	}
 	return c, err
 }
@@ -211,7 +213,7 @@ func drain(l *chanListener, msg string, port int) {
 		if err != nil {
 			return
 		}
-		slog.Info(msg, "from", c.RemoteAddr(), "port", port)
+		slog.Debug(msg, "from", c.RemoteAddr(), "port", port)
 		_ = c.Close()
 	}
 }
@@ -238,7 +240,11 @@ func logRequests(port int, h http.Handler) http.Handler {
 		if rec.code == http.StatusNotFound && req.URL.Path == "/v1/join" {
 			step += ", turned away: name not in NETHERNET_NAMES"
 		}
-		slog.Info(step, "from", req.RemoteAddr, "port", port, "method", req.Method, "path", req.URL.Path,
+		level := slog.LevelDebug
+		if rec.code >= 400 {
+			level = slog.LevelInfo // something went wrong: worth seeing
+		}
+		slog.Log(req.Context(), level, step, "from", req.RemoteAddr, "port", port, "method", req.Method, "path", req.URL.Path,
 			"host", req.Host, "encrypted", req.TLS != nil, "status", rec.code,
 			"took", time.Since(start).Round(time.Millisecond), "userAgent", req.UserAgent())
 	})

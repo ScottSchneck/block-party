@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.4.3
+
+- **A quieter log.** The details added while getting 1.26.60 consoles
+  working (every connection and join request to the console server list,
+  and how each menu loaded) now only show with `LOG_LEVEL=debug`. Failed
+  joins and menus that didn't load still show.
+- Removed a workaround for occasional stalled joins to the console server
+  list; gophertunnel 1.63 fixed the cause.
+
 ## 1.4.2
 
 - **The server list can verify Xbox sign-ins from 1.26.60 consoles

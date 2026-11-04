@@ -25,9 +25,10 @@ import (
 // The server list never turns a console away because its sign-in can't be
 // checked. It only shows a menu and hands the console on; the game server it
 // picks does its own sign-in and allowlist checks. Turning consoles away here
-// only breaks joining when Minecraft changes its sign-in format, which is what
-// happened with PlayStation in September 2026: its token is signed with
-// ES384, which gophertunnel v1.62.0 rejects outright.
+// only breaks joining when Minecraft changes its sign-in format, which has
+// happened twice: in September 2026 PlayStation's token was signed with ES384,
+// which gophertunnel then rejected outright, and from 26.60 consoles joining
+// over NetherNet sign their Login themselves (identity.go covers those).
 //
 // So the listener runs with gophertunnel's checks off, and this file checks
 // the sign-in itself and reports the result in the log (and, later, to the

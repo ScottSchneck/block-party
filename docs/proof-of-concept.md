@@ -84,5 +84,5 @@ request with `ReadPacket` and answers it the way the library would. With it,
 more slowly than loopback, so they rarely hit the gap, but a busy host can
 widen it.
 
-This should be reported upstream. Once gophertunnel sets the expectation
-before flushing, the workaround can be removed.
+gophertunnel 1.63 fixed it (it now expects the client's replies before
+sending StartGame), so the workaround was removed in Block Party 1.4.3.
