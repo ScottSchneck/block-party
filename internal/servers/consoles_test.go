@@ -431,8 +431,16 @@ func TestQueuedConsoleChangesOrder(t *testing.T) {
 	if r, a := strings.Index(all, "> whitelist reload"), strings.Index(all, "> whitelist add Steve"); r < 0 || a < 0 || r > a {
 		t.Errorf("order:\n%s", all)
 	}
-	if len(left) != 1 || left[0].Action != "deop" {
+	// Steve stays queued until the server confirms him.
+	if len(left) != 2 || left[0].Name != "Steve" || left[1].Action != "deop" {
 		t.Errorf("kept %+v", left)
+	}
+	waitConsole(t, s, "Added Steve to the whitelist")
+	s.mu.Lock()
+	left = append([]JavaPending(nil), s.meta.JavaPending...)
+	s.mu.Unlock()
+	if len(left) != 1 || left[0].Action != "deop" {
+		t.Errorf("after the server confirmed Steve: %+v", left)
 	}
 }
 

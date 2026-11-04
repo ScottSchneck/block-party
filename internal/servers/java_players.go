@@ -287,9 +287,53 @@ func (s *Server) applyJavaPendingLocked() {
 		cmd := map[string]string{"allow": "whitelist add ", "unallow": "whitelist remove ", "op": "op ", "deop": "deop "}[p.Action] + p.Name
 		s.addLineLocked("> " + cmd)
 		s.sendLocked(cmd)
+		if p.Action == "allow" || p.Action == "op" {
+			// The server looks the account up with Mojang, which can time
+			// out ("That player does not exist"): it stays queued until the
+			// server says it's done.
+			kept = append(kept, p)
+		}
 	}
 	s.meta.JavaPending = kept
 	s.saveMetaLater()
+}
+
+// javaRetryEvery is how long after a failed account lookup queued changes
+// are sent again; tests shorten it.
+var javaRetryEvery = 2 * time.Minute
+
+const javaMaxRetries = 10
+
+// javaDoneLocked takes a change the server confirmed off the queue: by
+// name, or ("" for "already whitelisted", which doesn't say who) the first
+// of that kind. Caller holds s.mu.
+func (s *Server) javaDoneLocked(name, action string) {
+	for i, p := range s.meta.JavaPending {
+		if p.Action == action && !isConsoleName(p.Name) && (name == "" || strings.EqualFold(p.Name, name)) {
+			s.meta.JavaPending = append(s.meta.JavaPending[:i:i], s.meta.JavaPending[i+1:]...)
+			s.saveMetaLater()
+			return
+		}
+	}
+}
+
+// javaLookupFailedLocked sends the queued changes again a little later,
+// while the server keeps running. Caller holds s.mu.
+func (s *Server) javaLookupFailedLocked() {
+	if s.javaRetry != nil || s.javaRetries >= javaMaxRetries {
+		return
+	}
+	s.javaRetries++
+	cmd := s.cmd
+	s.addLineLocked(fmt.Sprintf("[Panel] The server couldn't look the account up with Mojang; trying again in %s.", javaRetryEvery.Round(time.Second)))
+	s.javaRetry = time.AfterFunc(javaRetryEvery, func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		s.javaRetry = nil
+		if s.cmd == cmd && s.runningLocked() {
+			s.applyJavaPendingLocked()
+		}
+	})
 }
 
 // ---- log lines ----
@@ -317,9 +361,15 @@ var (
 	reJavaLost     = regexp.MustCompile(javaPrefix + javaPlayerName + ` lost connection: `)
 	reJavaNotAllow = regexp.MustCompile(javaPrefix + `(?:Disconnecting )?(?:com\.mojang\.authlib\.GameProfile.*?name=)?` + javaPlayerName + `(?: \(/|,| ).*(?:not white-?listed|not on the white-?list)`)
 	// Paper for Minecraft 26 logs it as "System chat: Saved the game".
-	reJavaSaved   = regexp.MustCompile(javaPrefix + javaSystemChat + `Saved the game\s*$`)
-	reJavaServer  = regexp.MustCompile(javaPrefix)
-	javaSaveLines = []string{"Automatic saving is now disabled", "Saving the game (this may take a moment!)", "Saved the game", "Automatic saving is now enabled", "Saving is already turned"}
+	reJavaSaved = regexp.MustCompile(javaPrefix + javaSystemChat + `Saved the game\s*$`)
+	// Replies to the queued allowlist and operator commands.
+	reJavaAdded      = regexp.MustCompile(javaPrefix + javaSystemChat + `Added ` + javaPlayerName + ` to the white-?list`)
+	reJavaMadeOp     = regexp.MustCompile(javaPrefix + javaSystemChat + `Made ` + javaPlayerName + ` a server operator`)
+	reJavaHadAllow   = regexp.MustCompile(javaPrefix + javaSystemChat + `Player is already white-?listed`)
+	reJavaHadOp      = regexp.MustCompile(javaPrefix + javaSystemChat + `Nothing changed\. The player already is an operator`)
+	reJavaNoSuchUser = regexp.MustCompile(javaPrefix + javaSystemChat + `That player does not exist`)
+	reJavaServer     = regexp.MustCompile(javaPrefix)
+	javaSaveLines    = []string{"Automatic saving is now disabled", "Saving the game (this may take a moment!)", "Saved the game", "Automatic saving is now enabled", "Saving is already turned"}
 )
 
 // onJavaLineLocked handles a line from a Java server. Caller holds s.mu.
@@ -360,6 +410,18 @@ func (s *Server) onJavaLineLocked(line string) {
 		if v := reJavaVersion.FindStringSubmatch(line)[1]; v != s.meta.Version {
 			s.meta.Version, s.meta.Build = v, 0 // after a restore: the build is learned at the next update
 			s.saveMetaLater()
+		}
+	case reJavaAdded.MatchString(line):
+		s.javaDoneLocked(reJavaAdded.FindStringSubmatch(line)[1], "allow")
+	case reJavaMadeOp.MatchString(line):
+		s.javaDoneLocked(reJavaMadeOp.FindStringSubmatch(line)[1], "op")
+	case reJavaHadAllow.MatchString(line):
+		s.javaDoneLocked("", "allow")
+	case reJavaHadOp.MatchString(line):
+		s.javaDoneLocked("", "op")
+	case reJavaNoSuchUser.MatchString(line):
+		if len(s.meta.JavaPending) > 0 {
+			s.javaLookupFailedLocked()
 		}
 	case reJavaLeave.MatchString(line):
 		s.playerLeftLocked(reJavaLeave.FindStringSubmatch(line)[1])

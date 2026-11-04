@@ -381,3 +381,34 @@ func TestModpackServer(t *testing.T) {
 		t.Error("only uploads in the servers folder")
 	}
 }
+
+// A queued allowlist change survives Mojang being slow for the server: it
+// stays queued and is sent again.
+func TestQueuedAllowlistRetries(t *testing.T) {
+	javaRetryEvery = 100 * time.Millisecond
+	defer func() { javaRetryEvery = 2 * time.Minute }()
+	java := newFakeJavaWorld(t)
+	java.profiles = false // the panel can't look anyone up: changes are queued
+	m := newJavaManager(t, java)
+	st, err := m.CreateJava("Retry", 1024, "Slow_Mojang")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, _ := m.Get(st.ID)
+	waitFor(t, s, "running", state(StateRunning))
+	waitConsole(t, s, "trying again")
+	waitConsole(t, s, "Added Slow_Mojang to the whitelist")
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		s.mu.Lock()
+		left := len(s.meta.JavaPending)
+		s.mu.Unlock()
+		if left == 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("still queued: %+v", s.meta.JavaPending)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}

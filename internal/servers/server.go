@@ -156,9 +156,11 @@ type Server struct {
 	hytaleSess        hytaleSession // for the next start of a Hytale server
 	hytaleSessErr     error
 	hytaleSessAt      time.Time
-	updatedConsoles   bool      // the update running installed new console plugins (for its notification)
-	pluginsChanged    time.Time // when a Java plugin was last added, updated, removed or turned on or off
-	jarSums           sync.Map  // plugin jar path -> jarSum (SHA-256 while unchanged)
+	updatedConsoles   bool        // the update running installed new console plugins (for its notification)
+	pluginsChanged    time.Time   // when a Java plugin was last added, updated, removed or turned on or off
+	jarSums           sync.Map    // plugin jar path -> jarSum (SHA-256 while unchanged)
+	javaRetry         *time.Timer // sends queued allowlist changes again after a failed lookup
+	javaRetries       int
 }
 
 func newServer(m *Manager, meta Meta) *Server {
@@ -515,6 +517,7 @@ func (s *Server) startLocked() error {
 	commands := make(chan string, commandQueue)
 	s.cmd, s.commands, s.exited, s.stopping = cmd, commands, make(chan struct{}), false
 	s.startedAt = time.Now()
+	s.javaRetries = 0
 	s.playing = ""
 	if p, err := readProperties(s.propertiesPath()); err == nil {
 		s.playing, _ = p.get("level-name")
@@ -590,6 +593,10 @@ func (s *Server) onExit(cmd *exec.Cmd, err error) {
 	close(s.exited)
 	close(s.commands)
 	s.cmd, s.commands, s.exited = nil, nil, nil
+	if s.javaRetry != nil {
+		s.javaRetry.Stop()
+		s.javaRetry = nil
+	}
 	s.everyoneLeftLocked()
 	cleanExit := cmd.ProcessState != nil && cmd.ProcessState.Success()
 	if requested || cleanExit {

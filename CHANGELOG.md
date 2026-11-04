@@ -29,6 +29,10 @@
   by searching Modrinth or uploaded as a .mrpack file: the panel installs
   the Minecraft version, mod loader and server-side mods it needs, checking
   every download. (CurseForge packs aren't supported yet.)
+- A Java player added while the server was starting (like you, on a new
+  server) is no longer lost when Mojang's account service is slow: the
+  change stays queued until the server confirms it, and is tried again
+  every 2 minutes.
 - Fixed the word "null" showing after the port at the top of a server's
   page when the server has no open hours.
 

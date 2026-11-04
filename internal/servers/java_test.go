@@ -40,6 +40,12 @@ while read line; do
     join\ *) echo "[12:00:05 INFO]: ${line#join } joined the game";;
     leave\ *) echo "[12:00:06 INFO]: ${line#leave } left the game";;
     reject\ *) echo "[12:00:07 INFO]: Disconnecting ${line#reject } (/192.168.1.20:50000): You are not white-listed on this server!";;
+    "whitelist add Slow_Mojang"|"op Slow_Mojang") echo "[12:00:08 INFO]: got: $line"
+      if [ ! -f .slow ]; then touch .slow; echo "[12:00:08 INFO]: That player does not exist"
+      elif [ "$line" = "op Slow_Mojang" ]; then echo "[12:00:08 INFO]: Made Slow_Mojang a server operator"
+      else echo "[12:00:08 INFO]: Added Slow_Mojang to the whitelist"; fi;;
+    whitelist\ add\ *) echo "[12:00:08 INFO]: got: $line"; echo "[12:00:08 INFO]: Added ${line#whitelist add } to the whitelist";;
+    op\ *) echo "[12:00:08 INFO]: got: $line"; echo "[12:00:08 INFO]: Made ${line#op } a server operator";;
     *) echo "[12:00:08 INFO]: got: $line";;
   esac
 done
