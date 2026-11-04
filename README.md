@@ -652,7 +652,7 @@ apply without a restart.
 | `DNS_ANSWER_INTERNET` | `false` | Older setting: always answer the featured names for consoles on the internet (with `PUBLIC_IP`). The **Friends on Xbox, PlayStation and Switch** switch does this now |
 | `CONNECTION` | `both` | `raknet`, `nethernet` or `both` |
 | `NETHERNET_NAMES` | empty | With `both`, offer NetherNet only for these names |
-| `SIGNALING` | `auto` | NetherNet join endpoint: `auto` (HTTPS and HTTP), `http` or `tls` |
+| `SIGNALING` | `http` | NetherNet join endpoint: `http`, `auto` (HTTPS and HTTP) or `tls`. Consoles refuse the list's own certificate (error Terracotta), so leave it on `http` |
 | `EXTRA_SIGNALING_PORTS` | `80,443` | More TCP ports for the NetherNet endpoint; `none` for none |
 | `RTC_PORT_MIN`, `RTC_PORT_MAX` | `19300`, `19319` | UDP ports for the list's NetherNet connections |
 | `LOAD_PRESET` | `standard` | How the empty menu world is built: `standard` or `bedrockconnect` |

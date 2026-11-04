@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.4.1
+
+- **Consoles on Minecraft 1.26.60 can open the server list from LAN Games
+  again.** They asked for a secure (HTTPS) join by the panel's IP address,
+  refused its self-made certificate and stopped with error Terracotta. The
+  list now turns secure joins away, so consoles use a plain join instead
+  (they may ask once whether to trust the server). Set `SIGNALING=auto` for
+  the old behaviour.
+
 ## 1.4.0
 
 - **The console server list works with Minecraft 1.26.60.** Consoles and

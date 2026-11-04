@@ -60,6 +60,7 @@ func TestConnectionSettings(t *testing.T) {
 		// Settings from the first build keep working.
 		{map[string]string{"SIGNALING": "off"}, true, false, "raknet", 0},
 		{map[string]string{"SIGNALING": "auto"}, true, true, "both", 0},
+		{map[string]string{"SIGNALING": "http"}, true, true, "both", 0},
 		{map[string]string{"RAKNET": "false"}, false, true, "nethernet", 0},
 	} {
 		t.Setenv("LIST_IP", "10.0.1.117")
@@ -77,6 +78,11 @@ func TestConnectionSettings(t *testing.T) {
 			len(c.NetherNetNames) != tc.wantNetherNetNames {
 			t.Errorf("%v: got connection=%s raknet=%v nethernet=%v names=%d", tc.env, c.Connection, c.RakNet,
 				c.NetherNet, len(c.NetherNetNames))
+		}
+		// Plain HTTP joins unless asked: consoles refuse the list's own
+		// certificate (Terracotta) but fall back from a refused HTTPS join.
+		if want := map[string]string{"auto": "auto"}[tc.env["SIGNALING"]]; want == "" && c.Signaling != "http" || want != "" && c.Signaling != want {
+			t.Errorf("%v: signaling %q", tc.env, c.Signaling)
 		}
 	}
 }

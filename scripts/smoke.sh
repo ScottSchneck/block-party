@@ -15,7 +15,7 @@ cleanup() {
 trap cleanup EXIT
 
 cp deploy/servers.example.json "$work/servers.json"
-LIST_IP=127.0.0.1 AUTH_OFF=true DNS_ENABLED=false CONNECTION=both \
+LIST_IP=127.0.0.1 AUTH_OFF=true DNS_ENABLED=false CONNECTION=both SIGNALING=auto \
 EXTRA_SIGNALING_PORTS=none SERVERS_FILE="$work/servers.json" DATA_DIR="$work" \
   "$BIN" >"$work/server.log" 2>&1 &
 pid=$!

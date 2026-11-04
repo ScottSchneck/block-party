@@ -162,8 +162,14 @@ func envInt(key string, def int) (int, error) {
 // for the list.
 func LoadConfig() (*Config, error) {
 	c := &Config{
-		DNSUpstream:    env("DNS_UPSTREAM", "1.1.1.1:53"),
-		Signaling:      strings.ToLower(env("SIGNALING", "auto")),
+		DNSUpstream: env("DNS_UPSTREAM", "1.1.1.1:53"),
+		// Plain HTTP by default: a console asking for HTTPS by IP address
+		// (LAN Games, Minecraft 26.60) refuses the list's self-made
+		// certificate and gives up with error Terracotta, while one turned
+		// away falls back to plain HTTP and asks the player to trust the
+		// server. Nobody can get a trusted certificate for a home IP or for a
+		// featured server's name, so HTTPS only helps experiments.
+		Signaling:      strings.ToLower(env("SIGNALING", "http")),
 		ServersFile:    env("SERVERS_FILE", "/config/servers.json"),
 		DataDir:        env("DATA_DIR", "/data"),
 		MenuTitle:      env("MENU_TITLE", "Pick a server"),
@@ -245,7 +251,7 @@ func LoadConfig() (*Config, error) {
 		return nil, fmt.Errorf("CONNECTION must be raknet, nethernet or both, got %q", c.Connection)
 	}
 	if c.Signaling == "off" {
-		c.Signaling = "auto"
+		c.Signaling = "http"
 	}
 	switch c.Signaling {
 	case "auto", "http", "tls":
