@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/netip"
 	"strconv"
 	"syscall"
 	"time"
@@ -172,10 +173,27 @@ func webrtcAPI(cfg *Config) *webrtc.API {
 	if err := s.SetEphemeralUDPPortRange(cfg.RTCPortMin, cfg.RTCPortMax); err != nil {
 		slog.Warn("could not limit WebRTC ports", "error", err)
 	}
-	if cfg.PublicIP.IsValid() {
+	if ip := advertisedIP(cfg); ip.IsValid() {
 		// Advertise the public IP as an extra (server-reflexive) candidate so
 		// home devices still use the LAN address and friends use the public one.
-		s.SetNAT1To1IPs([]string{cfg.PublicIP.String()}, webrtc.ICECandidateTypeSrflx)
+		s.SetNAT1To1IPs([]string{ip.String()}, webrtc.ICECandidateTypeSrflx)
+		slog.Info("NetherNet tells consoles outside the house to connect to this internet address", "ip", ip)
 	}
 	return webrtc.NewAPI(webrtc.WithSettingEngine(s))
+}
+
+// advertisedIP is the internet address consoles outside the house connect
+// to over NetherNet: PUBLIC_IP, or else the one Friends outside the house
+// found (while it's on). Without it, consoles outside on Minecraft 26.60,
+// which only join over NetherNet, are only told the home address and can't
+// connect. It's decided when the list starts: if the home's address changes,
+// the panel needs a restart for consoles outside.
+func advertisedIP(cfg *Config) netip.Addr {
+	if cfg.PublicIP.IsValid() {
+		return cfg.PublicIP
+	}
+	if o := cfg.outside(); o.Enabled && o.IP.IsValid() && o.IP.Is4() && !o.IP.IsPrivate() {
+		return o.IP
+	}
+	return netip.Addr{}
 }

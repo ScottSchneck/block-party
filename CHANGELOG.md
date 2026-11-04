@@ -8,6 +8,11 @@
   list now turns secure joins away, so consoles use a plain join instead
   (they may ask once whether to trust the server). Set `SIGNALING=auto` for
   the old behaviour.
+- **Consoles outside the house can join the server list over NetherNet.**
+  The list only told them the home's internet address when `PUBLIC_IP` was
+  set, so on 1.26.60 they were given the home address and couldn't connect.
+  It now uses the address Friends outside the house finds (restart the
+  container if that address changes).
 
 ## 1.4.0
 
