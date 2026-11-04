@@ -106,6 +106,7 @@ func Run(ctx context.Context, cfg *Config) error {
 				DisableTrickleICE:   true,
 				AllowAnonymous:      cfg.AuthOff,
 				IssueServerIdentity: identityIssuer(key),
+				VerifyClientToken:   verifyOfferIdentity,
 			},
 		}
 		l, err := listenWithRetry(ctx, "NetherNet", func() (*minecraft.Listener, error) {

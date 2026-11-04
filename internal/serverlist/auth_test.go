@@ -32,7 +32,7 @@ func offlineLogin(t *testing.T, legacy bool) []byte {
 }
 
 func TestSelfSignedTokenIsNotVerifiedButDescribed(t *testing.T) {
-	s := checkSignIn(offlineLogin(t, false), nil)
+	s := checkSignIn(offlineLogin(t, false), nil, false)
 	if s.Verified {
 		t.Fatal("a self-signed token must not count as verified")
 	}
@@ -48,14 +48,14 @@ func TestSelfSignedTokenIsNotVerifiedButDescribed(t *testing.T) {
 }
 
 func TestSelfSignedChainIsNotVerified(t *testing.T) {
-	if s := checkSignIn(offlineLogin(t, true), nil); s.Verified {
+	if s := checkSignIn(offlineLogin(t, true), nil, false); s.Verified {
 		t.Fatal("a self-signed certificate chain must not count as verified")
 	}
 }
 
 func TestUnreadableLogin(t *testing.T) {
 	for _, payload := range [][]byte{nil, {0, 0, 0, 1}, {0, 0, 0, 1, 200}} {
-		if s := checkSignIn(payload, nil); s.Verified || !strings.Contains(s.How, "unreadable") {
+		if s := checkSignIn(payload, nil, false); s.Verified || !strings.Contains(s.How, "unreadable") {
 			t.Errorf("payload %v: got %v", payload, s)
 		}
 	}

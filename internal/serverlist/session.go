@@ -41,7 +41,7 @@ func handleSession(cfg *Config, l *minecraft.Listener, conn *minecraft.Conn, tra
 	signedIn := "not checked (AUTH_OFF)"
 	var check signIn
 	if !cfg.AuthOff {
-		check = checkSignIn(loginPayload(conn.LocalAddr(), conn.RemoteAddr()), sharedVerifier.get())
+		check = checkSignIn(loginPayload(conn.LocalAddr(), conn.RemoteAddr()), sharedVerifier.get(), transport == "NetherNet")
 		signedIn = check.String()
 	}
 	log.Info("console connected to the server list",

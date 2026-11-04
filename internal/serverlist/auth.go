@@ -102,8 +102,10 @@ func fetchVerifier(ctx context.Context) (*oidc.IDTokenVerifier, error) {
 	return env.VerifierContext(ctx)
 }
 
-// checkSignIn checks the Login packet payload a console sent.
-func checkSignIn(loginPayload []byte, verifier *oidc.IDTokenVerifier) signIn {
+// checkSignIn checks the Login packet payload a console sent. netherNet says
+// the console came over NetherNet, whose connection proved it holds the
+// Login's key (see identity.go).
+func checkSignIn(loginPayload []byte, verifier *oidc.IDTokenVerifier, netherNet bool) signIn {
 	req, err := connectionRequest(loginPayload)
 	if err != nil {
 		return signIn{How: "login packet unreadable: " + err.Error()}
@@ -123,6 +125,14 @@ func checkSignIn(loginPayload []byte, verifier *oidc.IDTokenVerifier) signIn {
 	if chainOnly, err := withoutToken(req); err == nil {
 		if id, _, res, err := login.Parse(chainOnly, nil); err == nil && res.XBOXLiveAuthenticated {
 			return signIn{Verified: true, How: "Mojang certificate chain", XUID: id.XUID, Name: id.DisplayName}
+		}
+	}
+
+	// From 26.60 consoles joining over NetherNet sign their Login
+	// themselves; their connection offer carried the Microsoft-issued token.
+	if netherNet {
+		if id, ok := offerIdentity(loginKey(req)); ok {
+			return signIn{Verified: true, How: "Microsoft-issued NetherNet identity", XUID: id.XUID, Name: id.Name}
 		}
 	}
 

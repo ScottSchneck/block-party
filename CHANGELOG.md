@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.4.2
+
+- **The server list can verify Xbox sign-ins from 1.26.60 consoles
+  again.** Consoles joining over NetherNet now sign their join themselves,
+  so the list reported them as "not verified". It now checks the
+  Microsoft-issued identity the console sends when it connects, and the
+  join must come from the same console. `REQUIRE_SIGN_IN=true` works with
+  1.26.60 consoles again. Each NetherNet join logs "NetherNet connection
+  identity" with whether it was verified.
+
 ## 1.4.1
 
 - **Consoles on Minecraft 1.26.60 can open the server list from LAN Games
