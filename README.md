@@ -67,10 +67,12 @@ PS5, and the panel runs a family's servers day to day. See the
   UPnP (or lists the forwards to add by hand), and writes an invite that tells
   a friend how to join from a PC, phone or console. See
   [Friends outside the house](#friends-outside-the-house).
-- **Java Edition servers (Paper).** Add a server and pick Java: the panel
-  downloads Paper and the Java it needs, and Java servers get the same
-  console, players, settings, backups, overnight updates, roles and
-  notifications. See [Java servers](#java-servers).
+- **Java Edition servers.** Add a server and pick Java: Paper (the
+  default), Purpur, Vanilla, Fabric, Forge or NeoForge, on any Minecraft
+  version, or a modpack from Modrinth or CurseForge. The panel downloads the
+  server and the Java it needs, and Java servers get the same console,
+  players, settings, backups, overnight updates, roles and notifications.
+  See [Java servers](#java-servers).
 - **Computer use graphs.** Each server's Overview shows how much of the
   computer's processor and memory it uses, and how many players were on,
   over the last hour, day or week (a reading every 15 seconds, kept for a
@@ -105,7 +107,8 @@ PS5, and the panel runs a family's servers day to day. See the
 - **The web panel** at `https://<container IP>:8443`, for desktop and phone:
   a dashboard of every server (status, players, version, last backup, a note
   when a new Bedrock version is out), and for each server an Overview,
-  Players, Settings, Backups and Console. Two looks, each light or dark (or
+  Players, Settings, Add-ons (Bedrock) or Plugins (Paper and Purpur),
+  Backups, Tasks, Files and Console. Two looks, each light or dark (or
   following the device): **Control Room**, compact with every server in one
   table, and **Treehouse**, big tiles and buttons and plain words ("Turn on",
   "Let in"). Chosen under your name and saved with your account. Fonts are
@@ -251,7 +254,7 @@ Each person only sees the servers you give them, with one of three roles:
 | --- | --- |
 | **Can turn it on** | See the server and start it. |
 | **Runs it** | Also stop and restart it, let friends in (allowlist, operators, kick), change its settings, use the console, and make a backup. |
-| **Takes care of it** | Also update it, restore a backup, set the backup schedule, and download or delete backups. |
+| **Takes care of it** | Also update it, restore a backup, set the backup schedule, download or delete backups, add Bedrock add-ons, set up scheduled tasks, and use the file manager (but not change plugins, mods or programs, or delete whole folders). |
 
 Tick **Can add new servers** to let someone add their own; they take care of
 the servers they add. Only the owner can delete a server, import, manage
@@ -408,11 +411,13 @@ The Add-ons tab is for Bedrock servers.
 
 #### Plugins
 
-Java servers have a **Plugins** tab. The owner searches
+Paper and Purpur servers have a **Plugins** tab. The owner searches
 [Hangar](https://hangar.papermc.io) (PaperMC's plugin site) and
-[Modrinth](https://modrinth.com) together, and **Install** puts in the
-newest release made for the server's Minecraft version, plus any plugins it
-needs. Each download is checked against the site's checksum, and a plugin
+[Modrinth](https://modrinth.com) together. Only plugins with a release for
+the server's Minecraft version are shown (the tab says how many others were
+left out), including ones made for Spigot or Bukkit, which Paper runs.
+**Install** puts in the newest release made for the server's Minecraft
+version, plus any plugins it needs. Each download is checked against the site's checksum, and a plugin
 that's only offered on its own website isn't installed (the panel says
 where to get it). Plugins start the next time the server does; the tab
 offers a restart.
