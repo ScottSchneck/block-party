@@ -190,8 +190,12 @@
             <select id="add-version"><option value="">Newest</option></select>
           </label>
           <div id="add-modpack" class="add-modpack" hidden>
+            <div class="segmented small-seg" role="radiogroup" aria-label="Where from" id="modpack-source">
+              <label><input type="radio" name="modpack-source" value="modrinth" checked><span>Modrinth</span></label>
+              <label><input type="radio" name="modpack-source" value="curseforge"><span>CurseForge</span></label>
+            </div>
             <div class="row">
-              <input id="modpack-q" maxlength="100" placeholder="Search Modrinth modpacks" autocomplete="off" aria-label="Search modpacks">
+              <input id="modpack-q" maxlength="100" placeholder="Search modpacks" autocomplete="off" aria-label="Search modpacks">
               <button type="button" id="modpack-search">Search</button>
             </div>
             <ul id="modpack-results" class="people results"></ul>
@@ -355,6 +359,17 @@
         <a href="#/import"><b>Import servers</b><span class="muted">Copy servers in from Crafty Controller or another folder.</span></a>
         <a href="#/guide"><b>Setup guide</b><span class="muted">Go through setting up again: your gamertag, consoles, servers, and what's left.</span></a>
       </div>
+      <form class="card" id="cf-form">
+        <h3>CurseForge</h3>
+        <p class="muted small">With a CurseForge API key the panel can search and install Bedrock add-ons, texture packs and worlds (each server's Add-ons tab), and add Java servers from CurseForge modpacks. Get a free key at <a href="https://console.curseforge.com/" target="_blank" rel="noopener noreferrer">console.curseforge.com</a>. It's checked with CurseForge, kept on this server and never shown again.</p>
+        <p id="cf-status" class="small"></p>
+        <div class="row">
+          <input id="cf-key" type="password" autocomplete="off" placeholder="Paste your API key" aria-label="CurseForge API key" spellcheck="false">
+          <button type="submit" class="primary">Save</button>
+          <button type="button" id="cf-remove" hidden>Remove</button>
+        </div>
+        <p id="cf-error" class="error" hidden></p>
+      </form>
       <h2 class="section-title">You</h2>
       <div class="card help-links">
         <a href="#/account"><b>Your account</b><span class="muted">Light or dark, your password and two-factor sign-in, sign out.</span></a>
@@ -1095,6 +1110,22 @@
           <p class="muted small" data-care>Add-ons from CurseForge, MCPEDL or a creator's own site. They're added to this world, so they go along with its backups, and players' games download them when they join. Marketplace add-ons can't be used on a server.</p>
           <ul id="addons-list" class="people"></ul>
         </section>
+
+        <section class="card" id="cf-find" hidden>
+          <h3>Find add-ons on CurseForge</h3>
+          <form id="cf-search-form" class="row">
+            <select id="cf-kind" aria-label="What to find">
+              <option value="addons">Add-ons</option>
+              <option value="texture-packs">Texture packs</option>
+              <option value="worlds">Worlds</option>
+            </select>
+            <input id="cf-q" maxlength="100" placeholder="Search, e.g. furniture, dragons" autocomplete="off" aria-label="Search CurseForge">
+            <button type="submit" class="primary">Search</button>
+          </form>
+          <p class="muted small">Add-ons and texture packs go into the world being played; worlds are added to the list below. Some creators only allow downloads from CurseForge itself: those show a link instead.</p>
+          <ul id="cf-results" class="people results"></ul>
+        </section>
+        <p id="cf-hint" class="muted small" hidden>Add a CurseForge key in <a href="#/settings">Settings</a> to search and install add-ons from here.</p>
 
         <section class="card">
           <h3>Worlds</h3>

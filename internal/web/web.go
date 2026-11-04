@@ -27,6 +27,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -217,6 +218,7 @@ func (s *Server) routes() http.Handler {
 	s.metricsRoutes(mux)
 	s.taskRoutes(mux)
 	s.javaTypeRoutes(mux)
+	s.curseForgeRoutes(mux)
 	s.fileRoutes(mux)
 	return s.secure(mux)
 }
@@ -242,7 +244,7 @@ func (s *Server) secure(next http.Handler) http.Handler {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Referrer-Policy", "no-referrer")
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data: https://cdn.modrinth.com https://hangarcdn.papermc.io https://hangar.papermc.io")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data: https://cdn.modrinth.com https://hangarcdn.papermc.io https://hangar.papermc.io https://media.forgecdn.net")
 		// A custom header can't be sent cross-site without the browser asking
 		// first, and we never allow that, so other websites can't press
 		// buttons (or sign you in to their account) through your browser.
@@ -340,8 +342,8 @@ func writeError(w http.ResponseWriter, code int, err error) {
 }
 
 func (s *Server) info(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"version": s.opts.Version, "hostIP": s.opts.HostIP, "listName": s.opts.ListName, "owner": s.auth.Username(),
-		"panelUpdate": s.newerPanel(), "panelLatest": s.update.get()})
+	writeJSON(w, http.StatusOK, map[string]any{"version": s.opts.Version, "hostIP": s.opts.HostIP, "listName": s.opts.ListName, "owner": s.auth.Username(),
+		"panelUpdate": s.newerPanel(), "panelLatest": s.update.get(), "curseforge": s.mgr.CurseForgeKeySet()})
 }
 
 // listedServer is a server as the list shows it: its status and what the
@@ -402,7 +404,16 @@ func (s *Server) createServer(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusForbidden, errors.New("only the owner can add modpack servers (their mods run code on the computer)"))
 			return
 		}
-		st, err := s.mgr.CreateModpack(req.Name, req.MemoryMB, servers.ModpackSource{Project: req.Modpack})
+		src := servers.ModpackSource{Project: req.Modpack}
+		if id, ok := strings.CutPrefix(req.Modpack, "curseforge:"); ok {
+			n, err := strconv.Atoi(id)
+			if err != nil || n <= 0 {
+				writeError(w, http.StatusBadRequest, errors.New("that isn't a modpack"))
+				return
+			}
+			src = servers.ModpackSource{CurseForge: n}
+		}
+		st, err := s.mgr.CreateModpack(req.Name, req.MemoryMB, src)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, err)
 			return

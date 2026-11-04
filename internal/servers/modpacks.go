@@ -11,6 +11,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -77,8 +78,9 @@ func (m *Manager) SearchModpacks(ctx context.Context, query string) ([]ModpackRe
 // Modrinth project, or a .mrpack file already saved (by the caller) in the
 // servers folder.
 type ModpackSource struct {
-	Project string
-	File    string
+	Project    string
+	File       string
+	CurseForge int // a CurseForge modpack's project ID
 }
 
 // CreateModpack sets up a new Java server from a modpack.
@@ -91,12 +93,24 @@ func (m *Manager) CreateModpack(name string, memoryMB int, src ModpackSource) (S
 			return Status{}, errors.New("that isn't an uploaded modpack")
 		}
 	}
-	if (src.Project == "") == (src.File == "") {
+	n := 0
+	for _, set := range []bool{src.Project != "", src.File != "", src.CurseForge != 0} {
+		if set {
+			n++
+		}
+	}
+	if n != 1 || src.CurseForge < 0 {
 		return Status{}, errors.New("choose a modpack")
 	}
+	if src.CurseForge != 0 && !m.CurseForgeKeySet() {
+		return Status{}, ErrNoCurseForgeKey
+	}
 	pack := "modrinth:" + src.Project
-	if src.File != "" {
+	switch {
+	case src.File != "":
 		pack = "file:" + filepath.Base(src.File)
+	case src.CurseForge != 0:
+		pack = fmt.Sprintf("curseforge:%d", src.CurseForge)
 	}
 	return m.createWith(TypeJava, name, false, memoryMB, nil, func(meta *Meta) {
 		meta.PackSource = pack
@@ -200,6 +214,13 @@ func (s *Server) installModpack(ctx context.Context) error {
 	s.mu.Lock()
 	src := s.meta.PackSource
 	s.mu.Unlock()
+	if id, ok := strings.CutPrefix(src, "curseforge:"); ok {
+		n, err := strconv.Atoi(id)
+		if err != nil {
+			return errors.New("bad modpack")
+		}
+		return s.installCurseForgePack(ctx, n)
+	}
 	file, _, err := s.modpackFile(ctx, src)
 	if err != nil {
 		return err

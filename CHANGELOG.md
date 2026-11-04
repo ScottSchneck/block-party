@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.6.0
+
+- **CurseForge.** Add a CurseForge API key (free, from
+  console.curseforge.com) on the Settings page, and:
+  - each Bedrock server's Add-ons tab gets **Find add-ons on CurseForge**:
+    search add-ons, texture packs and worlds, and install them with one
+    button (add-ons go into the world being played, worlds are added to
+    the list);
+  - Add server → Java → Modpack can search CurseForge as well as Modrinth.
+    The panel installs the pack's Minecraft version and mod loader, then
+    its server pack when it has one, or its mods (leaving out ones only for
+    players' games, texture packs and shaders) and settings.
+
+  Some creators only allow downloads from CurseForge itself; the panel
+  respects that and says where to get those. The key is checked with
+  CurseForge, kept in its own file on the server, and never shown again.
+
 ## 1.5.1
 
 - **Plugin search only shows plugins that will install.** Hangar and

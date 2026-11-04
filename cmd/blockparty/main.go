@@ -103,6 +103,7 @@ func main() {
 		ForgePromos:    os.Getenv("FORGE_PROMOS"),
 		ForgeMaven:     os.Getenv("FORGE_MAVEN"),
 		NeoForgeMaven:  os.Getenv("NEOFORGE_MAVEN"),
+		CurseForgeAPI:  os.Getenv("CURSEFORGE_API"),
 		HytaleOAuth:    os.Getenv("HYTALE_OAUTH"),
 		HytaleAccounts: os.Getenv("HYTALE_ACCOUNTS"),
 		HytaleSessions: os.Getenv("HYTALE_SESSIONS"),

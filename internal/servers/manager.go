@@ -43,6 +43,8 @@ type Options struct {
 	ForgePromos   string
 	ForgeMaven    string
 	NeoForgeMaven string
+	// CurseForge's API (Bedrock add-ons and Java modpacks).
+	CurseForgeAPI string
 	// Where console support for Java servers comes from.
 	GeyserAPI  string
 	HangarAPI  string
@@ -95,6 +97,7 @@ type Manager struct {
 	metrics       *metricStore
 	tasks         *taskState
 	javaVersions  versionListCache
+	cf            cfCache
 }
 
 // Meta is what the panel remembers about a server between restarts.
@@ -193,7 +196,7 @@ func New(opts Options) *Manager {
 		{&opts.GeyserAPI, DefaultGeyserAPI}, {&opts.HangarAPI, DefaultHangarAPI}, {&opts.XboxLookup, DefaultXboxLookup},
 		{&opts.ModrinthAPI, DefaultModrinthAPI},
 		{&opts.PurpurAPI, DefaultPurpurAPI}, {&opts.FabricMeta, DefaultFabricMeta}, {&opts.ForgePromos, DefaultForgePromos},
-		{&opts.ForgeMaven, DefaultForgeMaven}, {&opts.NeoForgeMaven, DefaultNeoForgeMaven},
+		{&opts.ForgeMaven, DefaultForgeMaven}, {&opts.NeoForgeMaven, DefaultNeoForgeMaven}, {&opts.CurseForgeAPI, DefaultCurseForgeAPI},
 		{&opts.HytaleOAuth, DefaultHytaleOAuth}, {&opts.HytaleAccounts, DefaultHytaleAccounts}, {&opts.HytaleSessions, DefaultHytaleSessions},
 	} {
 		if *d.v == "" {

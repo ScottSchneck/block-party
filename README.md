@@ -369,6 +369,12 @@ default):
 | [NeoForge](https://neoforged.net) | NeoForge mods, 1.20.2 and later | No |
 | Modpack | A Modrinth modpack (.mrpack), searched or uploaded; owner only | Fabric packs only |
 
+With a CurseForge API key (Settings → CurseForge), modpacks can come from
+CurseForge too: the panel uses the pack's server pack when it has one, or
+fetches its mods (leaving out ones only for players' games). Mods whose
+creators only allow downloads from CurseForge itself are listed in the
+console, to download and upload by hand.
+
 Mods go in the server's `mods` folder: the owner adds them in the **Files**
 tab, made for the server's Minecraft version and loader. A modpack server
 gets the Minecraft version, loader and mods its pack asks for (only the
@@ -565,6 +571,12 @@ Backups).
 Who can do what: anyone who **runs** a server sees its add-ons and worlds and
 can switch worlds; installing, turning on and off, removing, uploading and
 downloading take someone who **takes care of** it.
+
+**Find add-ons on CurseForge.** With a CurseForge API key (Settings →
+CurseForge; get one free at [console.curseforge.com](https://console.curseforge.com/)),
+the Add-ons tab can search CurseForge's Bedrock add-ons, texture packs and
+worlds and install them with one button. Some creators only allow downloads
+from CurseForge itself; those show a link instead.
 
 ### Moving from Crafty
 
