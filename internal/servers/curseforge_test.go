@@ -66,7 +66,25 @@ func newFakeCurseForge(t *testing.T) *fakeCurseForge {
 			var out []map[string]any
 			for _, m := range mods {
 				if m["classId"] == mustAtoi(q.Get("classId")) && strings.Contains(strings.ToLower(m["name"].(string)), strings.ToLower(q.Get("searchFilter"))) {
-					out = append(out, m)
+					// Like CurseForge: the newest files, one entry per game version.
+					var idx []map[string]any
+					for _, fl := range modFiles[m["id"].(int)] {
+						if fl["isServerPack"] == true {
+							continue
+						}
+						for _, v := range fl["gameVersions"].([]string) {
+							e := map[string]any{"gameVersion": v, "fileId": fl["id"], "releaseType": fl["releaseType"]}
+							if l, ok := fl["modLoader"]; ok {
+								e["modLoader"] = l
+							}
+							idx = append(idx, e)
+						}
+					}
+					c := map[string]any{"latestFilesIndexes": idx}
+					for k, v := range m {
+						c[k] = v
+					}
+					out = append(out, c)
 				}
 			}
 			enc.Encode(map[string]any{"data": out})
@@ -107,10 +125,19 @@ func newFakeCurseForge(t *testing.T) *fakeCurseForge {
 	}))
 	t.Cleanup(f.srv.Close)
 
-	// Bedrock: an add-on, one the creator keeps to CurseForge, and a world.
-	addMod(100, 1, "Cool Mobs", true, file(1001, 100, "cool.mcpack", []byte(zipBytes(t, map[string]string{"manifest.json": resourceManifest})), nil))
-	addMod(101, 1, "Kept Mobs", false, file(1011, 101, "kept.mcpack", []byte("x"), map[string]any{"downloadUrl": nil}))
-	addMod(102, 3, "Castle Map", true, file(1021, 102, "castle.mcworld", []byte(zipBytes(t, map[string]string{"Castle/level.dat": "c", "Castle/levelname.txt": "Big Castle"})), nil))
+	// Bedrock: an add-on, one the creator keeps to CurseForge, a world, one
+	// with a file for each Minecraft version, and one only for a newer
+	// Minecraft than the test server's 1.26.52.
+	bedrock := func(v ...string) map[string]any { return map[string]any{"gameVersions": v} }
+	addMod(100, 1, "Cool Mobs", true, file(1001, 100, "cool.mcpack", []byte(zipBytes(t, map[string]string{"manifest.json": resourceManifest})), bedrock("1.21.50", "26.0")))
+	addMod(101, 1, "Kept Mobs", false, file(1011, 101, "kept.mcpack", []byte("x"), map[string]any{"downloadUrl": nil, "gameVersions": []string{"26.50"}}))
+	addMod(102, 3, "Castle Map", true, file(1021, 102, "castle.mcworld", []byte(zipBytes(t, map[string]string{"Castle/level.dat": "c", "Castle/levelname.txt": "Big Castle"})), bedrock()))
+	versioned := func(id int, v, when string) map[string]any {
+		mf := strings.Replace(resourceManifest, `"version": "2.0.1"}`, `"version": "`+v+`.0"}`, 1)
+		return file(id, 103, "mobs-"+v+".mcpack", []byte(zipBytes(t, map[string]string{"manifest.json": mf})), map[string]any{"gameVersions": []string{v}, "fileDate": when})
+	}
+	addMod(103, 1, "Version Mobs", true, versioned(1031, "26.60", "2026-10-20T00:00:00Z"), versioned(1032, "26.50", "2026-09-20T00:00:00Z"), versioned(1033, "26.40", "2026-08-20T00:00:00Z"))
+	addMod(104, 1, "Future Mobs", true, file(1041, 104, "future.mcpack", []byte(zipBytes(t, map[string]string{"manifest.json": resourceManifest})), bedrock("26.60", "Bedrock")))
 
 	// Java: a modpack's mods (one for the server, a texture pack, a
 	// client-only mod, one kept to CurseForge), and two packs.
@@ -129,7 +156,9 @@ func newFakeCurseForge(t *testing.T) *fakeCurseForge {
 	serverPack := file(2012, 201, "tidy-server.zip", []byte(zipBytes(t, map[string]string{
 		"Tidy Server/mods/tidy.jar": "tidy", "Tidy Server/config/tidy.toml": "b = 2", "Tidy Server/start.sh": "evil",
 		"Tidy Server/fabric-installer.jar": "installer", "Tidy Server/libraries/x.jar": "lib", "Tidy Server/server.properties": "server-port=1"})), map[string]any{"isServerPack": true})
-	addMod(201, 4471, "Tidy Pack", true, file(2011, 201, "tidy.zip", []byte(zipBytes(t, map[string]string{"manifest.json": manifest("Tidy Pack")})), map[string]any{"serverPackFileId": 2012}), serverPack)
+	addMod(201, 4471, "Tidy Pack", true, file(2011, 201, "tidy.zip", []byte(zipBytes(t, map[string]string{"manifest.json": manifest("Tidy Pack")})), map[string]any{"serverPackFileId": 2012, "modLoader": cfFabric}), serverPack)
+	addMod(202, 4471, "Quilted Pack", true, file(2021, 202, "quilted.zip", []byte("q"), map[string]any{"modLoader": cfQuilt}))
+	addMod(203, 4471, "Kept Pack", false, file(2031, 203, "keptpack.zip", []byte("k"), map[string]any{"downloadUrl": nil}))
 	return f
 }
 
@@ -151,13 +180,13 @@ func allowFakeCurseForge(t *testing.T, f *fakeCurseForge) {
 func TestCurseForgeBedrock(t *testing.T) {
 	cf := newFakeCurseForge(t)
 	allowFakeCurseForge(t, cf)
-	mojang := newFakeMojang(t, "1.0.0.1")
+	mojang := newFakeMojang(t, "1.26.52.3")
 	m := New(Options{DataDir: t.TempDir(), DownloadAPI: mojang.srv.URL + "/links", StopTimeout: time.Second, CurseForgeAPI: cf.srv.URL})
 	if err := m.Load(); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(m.StopAll)
-	if _, err := m.SearchCurseForge(t.Context(), CFAddons, ""); !errors.Is(err, ErrNoCurseForgeKey) {
+	if _, _, err := m.SearchCurseForge(t.Context(), CFAddons, "", ""); !errors.Is(err, ErrNoCurseForgeKey) {
 		t.Errorf("without a key: %v", err)
 	}
 	if err := m.SetCurseForgeKey(t.Context(), "bad-key"); err == nil || m.CurseForgeKeySet() {
@@ -169,14 +198,38 @@ func TestCurseForgeBedrock(t *testing.T) {
 	if st, _ := os.Stat(m.curseForgeKeyPath()); st.Mode().Perm() != 0o600 {
 		t.Errorf("key file mode %v", st.Mode())
 	}
-	res, err := m.SearchCurseForge(t.Context(), CFAddons, "mobs")
-	if err != nil || len(res) != 2 {
+	s := createRunning(t, m, "Family")
+	if v := s.Status().Version; v != "1.26.52.3" {
+		t.Fatalf("server version %q", v)
+	}
+
+	// For this server: only what works on 1.26.52, and the file made for it.
+	res, notes, err := m.SearchCurseForge(t.Context(), CFAddons, "mobs", s.Status().Version)
+	if err != nil || len(res) != 2 || res[0].ID+res[1].ID != 203 {
 		t.Fatalf("search: %+v %v", res, err)
 	}
-	s := createRunning(t, m, "Family")
+	for _, r := range res {
+		if r.ID == 103 && (len(r.Versions) != 1 || r.Versions[0] != "26.50") {
+			t.Errorf("version mobs is shown as made for %v", r.Versions)
+		}
+	}
+	if j := strings.Join(notes, " "); !strings.Contains(j, "1 more found need a newer Minecraft than this server's 1.26.52.3") || !strings.Contains(j, "1 more found can only be downloaded from CurseForge's own site") {
+		t.Errorf("notes: %q", notes)
+	}
+	// Not for a server: everything that can be downloaded.
+	if res, _, err := m.SearchCurseForge(t.Context(), CFAddons, "mobs", ""); err != nil || len(res) != 3 {
+		t.Errorf("search without a server: %+v %v", res, err)
+	}
+
 	name, packs, _, err := s.InstallCurseForge(t.Context(), 100)
 	if err != nil || name != "Cool Mobs" || len(packs.Installed) != 1 {
 		t.Fatalf("install: %s %+v %v", name, packs, err)
+	}
+	if _, packs, _, err := s.InstallCurseForge(t.Context(), 103); err != nil || len(packs.Installed) != 1 || packs.Installed[0].Version != "26.50.0" {
+		t.Errorf("the file for this version: %+v %v", packs, err)
+	}
+	if _, _, _, err := s.InstallCurseForge(t.Context(), 104); err == nil || !strings.Contains(err.Error(), "needs Minecraft 26.60 or newer, and this server has 1.26.52.3") {
+		t.Errorf("too new: %v", err)
 	}
 	if _, _, _, err := s.InstallCurseForge(t.Context(), 101); err == nil || !strings.Contains(err.Error(), "only allows downloading it from CurseForge") {
 		t.Errorf("a creator's choice is respected: %v", err)
@@ -210,6 +263,14 @@ func TestCurseForgeModpacks(t *testing.T) {
 	}
 	if err := m.SetCurseForgeKey(t.Context(), "good-key"); err != nil {
 		t.Fatal(err)
+	}
+	// Search: not the Quilt pack or the one kept to CurseForge.
+	res, notes, err := m.SearchCurseForge(t.Context(), CFModpacks, "pack", "")
+	if err != nil || len(res) != 1 || res[0].Name != "Tidy Pack" {
+		t.Errorf("modpack search: %+v %v", res, err)
+	}
+	if j := strings.Join(notes, " "); !strings.Contains(j, "1 more found are for Quilt") || !strings.Contains(j, "1 more found can only be downloaded") {
+		t.Errorf("modpack notes: %q", notes)
 	}
 
 	// Mods one by one: the server's mod only, the kept one reported.
@@ -252,5 +313,38 @@ func TestCurseForgeModpacks(t *testing.T) {
 	}
 	if fileExists(filepath.Join(s2.dir(), "mods", "servermod.jar")) {
 		t.Error("with a server pack, the mods aren't fetched one by one")
+	}
+}
+
+func TestCurseForgeVersions(t *testing.T) {
+	for _, c := range []struct {
+		a, b string
+		want int
+	}{
+		{"26.60", "1.26.60.1", 0}, {"26.50", "1.26.52.3", -1}, {"1.21.50", "26.10", -1}, {"26.0.02", "1.26.0", 0}, {"1.21.130", "1.21.50", 1},
+	} {
+		if got := cmpVer(bedrockVer(c.a), bedrockVer(c.b)); got != c.want {
+			t.Errorf("%s vs %s: %d", c.a, c.b, got)
+		}
+	}
+	for _, v := range []string{"Bedrock", "", "0.1", "26.x"} {
+		if bedrockVer(v) != nil {
+			t.Errorf("%q isn't a version", v)
+		}
+	}
+	server := bedrockVer("1.26.52.3")
+	cands := append(cfCandidates(1, []string{"26.60"}, true, "c"), cfCandidates(2, []string{"26.50", "26.40"}, false, "b")...)
+	cands = append(cands, cfCandidates(3, []string{"26.50"}, true, "a")...)
+	if best, ok, _ := cfPick(cands, server); !ok || best.file != 3 {
+		t.Errorf("a release for 26.50 over a beta: %+v", best)
+	}
+	if best, ok, _ := cfPick(cands, nil); !ok || best.file != 1 {
+		t.Errorf("no server version, the newest: %+v", best)
+	}
+	if _, ok, needs := cfPick(cfCandidates(1, []string{"26.70", "26.60"}, true, ""), server); ok || needs != "26.60" {
+		t.Errorf("too new: %v %q", ok, needs)
+	}
+	if best, ok, _ := cfPick(cfCandidates(4, []string{"Bedrock"}, true, ""), server); !ok || best.file != 4 {
+		t.Errorf("a file that doesn't say fits: %v", ok)
 	}
 }

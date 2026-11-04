@@ -2603,11 +2603,14 @@ async function searchModpacks(q) {
   if (!cfOn) document.querySelector('input[name="modpack-source"][value="modrinth"]').checked = true;
   const source = modpackSource();
   box.replaceChildren(emptyRow("Searching…"));
+  $("modpack-notes").hidden = true;
   try {
     const v = source === "curseforge"
       ? await api("/api/curseforge/search?kind=modpacks&q=" + encodeURIComponent(q))
       : await api("/api/modpacks?q=" + encodeURIComponent(q));
-    const results = (v.results || []).filter((p) => source !== "curseforge" || p.installable);
+    const results = v.results || [];
+    $("modpack-notes").textContent = (v.notes || []).join(" ");
+    $("modpack-notes").hidden = !(v.notes || []).length;
     box.replaceChildren(...(results.length ? results.map((p) => {
       const pid = source === "curseforge" ? "curseforge:" + p.id : p.id;
       const chosen = modpackChoice && modpackChoice.id === pid;
@@ -2617,7 +2620,7 @@ async function searchModpacks(q) {
         p.page ? el("a", { href: p.page, target: "_blank", rel: "noopener noreferrer", class: "small" }, "About") : null,
         btn(chosen ? "Chosen" : "Choose", () => { modpackChoice = { id: pid, name: p.name }; $("modpack-file-name").textContent = ""; if (!$("add-name").value) $("add-name").value = p.name.slice(0, 40); searchModpacks($("modpack-q").value.trim()); }, chosen ? "primary" : ""));
     }) : [emptyRow("No modpacks found.")]));
-  } catch (err) { box.replaceChildren(emptyRow("Couldn't search Modrinth: " + err.message)); }
+  } catch (err) { box.replaceChildren(emptyRow(`Couldn't search ${source === "curseforge" ? "CurseForge" : "Modrinth"}: ` + err.message)); }
 }
 $("modpack-search").addEventListener("click", () => searchModpacks($("modpack-q").value.trim()));
 for (const r of document.querySelectorAll('input[name="modpack-source"]')) r.addEventListener("change", () => { modpackChoice = null; searchModpacks($("modpack-q").value.trim()); });
@@ -2776,17 +2779,20 @@ function cfRow(p, action) {
   return el("li", {},
     p.icon ? el("img", { src: p.icon, alt: "", class: "plugin-icon", width: 40, height: 40, loading: "lazy" }) : null,
     el("span", { class: "who" }, el("b", {}, p.name), el("small", {}, `${p.description}${p.author ? " · by " + p.author : ""}${p.versions && p.versions.length ? " · Minecraft " + p.versions[0] : ""}`)),
-    p.page ? el("a", { href: p.page, target: "_blank", rel: "noopener noreferrer", class: "small" }, p.installable ? "About" : "Get it on CurseForge") : null,
-    p.installable ? action : el("span", { class: "small muted" }, "Download only on CurseForge"));
+    p.page ? el("a", { href: p.page, target: "_blank", rel: "noopener noreferrer", class: "small" }, "About") : null,
+    action);
 }
 
 async function searchCurseForge() {
   const id = selected, box = $("cf-results");
   box.replaceChildren(emptyRow("Searching…"));
+  $("cf-notes").hidden = true;
   try {
-    const v = await api(`/api/curseforge/search?kind=${encodeURIComponent($("cf-kind").value)}&q=${encodeURIComponent($("cf-q").value.trim())}`);
+    const v = await api(`/api/curseforge/search?kind=${encodeURIComponent($("cf-kind").value)}&server=${encodeURIComponent(id)}&q=${encodeURIComponent($("cf-q").value.trim())}`);
     if (id !== selected) return;
     const res = v.results || [];
+    $("cf-notes").textContent = (v.notes || []).join(" ");
+    $("cf-notes").hidden = !(v.notes || []).length;
     box.replaceChildren(...(res.length ? res.map((p) => cfRow(p, btn("Install", async (ev) => {
       const b = ev.currentTarget;
       b.disabled = true;

@@ -301,3 +301,20 @@ func readFileT(t *testing.T, path string) string {
 	}
 	return string(b)
 }
+
+func TestAddonsNeedMinecraft(t *testing.T) {
+	for _, c := range []struct {
+		engine, server, want string
+	}{
+		{`[1, 21, 50]`, "1.26.52.3", ""}, {`[26, 60, 0]`, "1.26.52.3", "26.60"}, {`[1, 26, 60]`, "1.26.52.3", "1.26.60"},
+		{`[1, 26, 50]`, "1.26.52.3", ""}, {`[26, 60, 0]`, "", ""}, {``, "1.26.52.3", ""},
+	} {
+		var m manifest
+		if c.engine != "" {
+			m.Header.MinEngine = json.RawMessage(c.engine)
+		}
+		if got := m.tooNewFor(c.server); got != c.want {
+			t.Errorf("%s on %q: %q", c.engine, c.server, got)
+		}
+	}
+}

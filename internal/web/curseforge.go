@@ -48,6 +48,7 @@ func (s *Server) putCurseForge(w http.ResponseWriter, r *http.Request) {
 func (s *Server) searchCurseForge(w http.ResponseWriter, r *http.Request) {
 	kind := r.URL.Query().Get("kind")
 	p := me(r)
+	forVersion := ""
 	switch kind {
 	case servers.CFModpacks:
 		if !p.Owner {
@@ -55,6 +56,20 @@ func (s *Server) searchCurseForge(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	case servers.CFAddons, servers.CFTextures, servers.CFWorlds:
+		// For a server: only what works on its version.
+		if id := r.URL.Query().Get("server"); id != "" {
+			srv, ok := s.mgr.Get(id)
+			if !ok || p.Level(id) == 0 {
+				writeError(w, http.StatusNotFound, errors.New("no such server"))
+				return
+			}
+			if p.Level(id) < levelCare {
+				writeError(w, http.StatusForbidden, errNotAllowed)
+				return
+			}
+			forVersion = srv.Status().Version
+			break
+		}
 		allowed := p.Owner
 		for _, st := range s.mgr.List() {
 			allowed = allowed || p.Level(st.ID) >= levelCare
@@ -69,7 +84,7 @@ func (s *Server) searchCurseForge(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
-	res, err := s.mgr.SearchCurseForge(ctx, kind, r.URL.Query().Get("q"))
+	res, notes, err := s.mgr.SearchCurseForge(ctx, kind, r.URL.Query().Get("q"), forVersion)
 	if err != nil {
 		code := http.StatusBadGateway
 		if errors.Is(err, servers.ErrNoCurseForgeKey) {
@@ -78,7 +93,7 @@ func (s *Server) searchCurseForge(w http.ResponseWriter, r *http.Request) {
 		writeError(w, code, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"results": res})
+	writeJSON(w, http.StatusOK, map[string]any{"results": res, "notes": notes})
 }
 
 func (s *Server) installCurseForge(w http.ResponseWriter, r *http.Request, srv *servers.Server) {

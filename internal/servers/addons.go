@@ -59,6 +59,7 @@ type manifest struct {
 		Description string          `json:"description"`
 		UUID        string          `json:"uuid"`
 		Version     json.RawMessage `json:"version"`
+		MinEngine   json.RawMessage `json:"min_engine_version"`
 	} `json:"header"`
 	Modules []struct {
 		Type string `json:"type"`
@@ -189,6 +190,25 @@ func parseVersion(raw json.RawMessage) ([3]int, bool) {
 }
 
 func versionText(v [3]int) string { return fmt.Sprintf("%d.%d.%d", v[0], v[1], v[2]) }
+
+// tooNewFor is the Minecraft version the pack needs (its
+// min_engine_version), when that's newer than server's; a server that
+// tries to load it would leave it out.
+func (m *manifest) tooNewFor(server string) string {
+	have := bedrockVer(server)
+	need, ok := parseVersion(m.Header.MinEngine)
+	if have == nil || !ok {
+		return ""
+	}
+	text := versionText(need)
+	if need[0] >= 26 && need[2] == 0 {
+		text = fmt.Sprintf("%d.%d", need[0], need[1]) // as Minecraft writes it since 2026
+	}
+	if v := bedrockVer(versionText(need)); v != nil && cmpVer(v, have) > 0 {
+		return text
+	}
+	return ""
+}
 
 // needsBeta reports a dependency on a beta version of the scripting API.
 func (m *manifest) needsBeta() bool {
@@ -513,6 +533,7 @@ func (s *Server) InstallPacks(ctx context.Context, upload string) (res InstallRe
 		}
 	}
 	seen := map[string]bool{}
+	serverVersion := s.Status().Version
 	// Whatever was installed is turned on, even if a later pack fails.
 	defer func() {
 		for _, kind := range packKinds {
@@ -543,6 +564,10 @@ func (s *Server) InstallPacks(ctx context.Context, upload string) (res InstallRe
 		v, ok := parseVersion(m.Header.Version)
 		if !ok {
 			res.Skipped = append(res.Skipped, label+": its manifest.json has no version")
+			continue
+		}
+		if need := m.tooNewFor(serverVersion); need != "" {
+			res.Skipped = append(res.Skipped, fmt.Sprintf("%s: it needs Minecraft %s or newer, and this server has %s", label, need, serverVersion))
 			continue
 		}
 		packsDir := filepath.Join(wd, kind+"_packs")

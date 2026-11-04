@@ -199,6 +199,7 @@
               <button type="button" id="modpack-search">Search</button>
             </div>
             <ul id="modpack-results" class="people results"></ul>
+            <p id="modpack-notes" class="muted small" hidden></p>
             <div class="dropzone" id="modpack-drop">
               <p class="small">Or upload a <b>.mrpack</b> file:</p>
               <label class="button">Choose a file<input type="file" id="modpack-file" accept=".mrpack" hidden></label>
@@ -1122,8 +1123,9 @@
             <input id="cf-q" maxlength="100" placeholder="Search, e.g. furniture, dragons" autocomplete="off" aria-label="Search CurseForge">
             <button type="submit" class="primary">Search</button>
           </form>
-          <p class="muted small">Add-ons and texture packs go into the world being played; worlds are added to the list below. Some creators only allow downloads from CurseForge itself: those show a link instead.</p>
+          <p class="muted small">Add-ons and texture packs go into the world being played; worlds are added to the list below. Only what works on this server's Minecraft version is shown.</p>
           <ul id="cf-results" class="people results"></ul>
+          <p id="cf-notes" class="muted small" hidden></p>
         </section>
         <p id="cf-hint" class="muted small" hidden>Add a CurseForge key in <a href="#/settings">Settings</a> to search and install add-ons from here.</p>
 

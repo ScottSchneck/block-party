@@ -262,12 +262,147 @@ type cfMod struct {
 	Authors []struct {
 		Name string `json:"name"`
 	} `json:"authors"`
-	LatestFilesIndexes []struct {
-		GameVersion string `json:"gameVersion"`
-	} `json:"latestFilesIndexes"`
+	LatestFilesIndexes []cfIndex `json:"latestFilesIndexes"`
 }
 
-func (c cfMod) result() CFResult {
+// cfIndex is one of a project's newest files, for one game version.
+type cfIndex struct {
+	GameVersion string `json:"gameVersion"`
+	FileID      int    `json:"fileId"`
+	ReleaseType int    `json:"releaseType"`
+	ModLoader   *int   `json:"modLoader"`
+}
+
+// CurseForge's mod loader numbers.
+const (
+	cfForge    = 1
+	cfFabric   = 4
+	cfQuilt    = 5
+	cfNeoForge = 6
+)
+
+// runsOnPanel: a modpack whose newest files are all for loaders the panel
+// doesn't run (Quilt) is left out of searches.
+func (c cfMod) runsOnPanel() bool {
+	known := false
+	for _, f := range c.LatestFilesIndexes {
+		if f.ModLoader == nil {
+			continue
+		}
+		known = true
+		switch *f.ModLoader {
+		case cfForge, cfFabric, cfNeoForge:
+			return true
+		}
+	}
+	return !known
+}
+
+// bedrockVer reads a Bedrock version for comparing. Minecraft renumbered
+// in 2026, so "26.60" (as CurseForge writes it), "1.26.60.1" (the
+// server's) and [26, 60, 0] all become [1 26 60]. nil if it isn't one.
+func bedrockVer(v string) []int {
+	var n []int
+	for _, p := range strings.Split(strings.TrimSpace(v), ".") {
+		x, err := strconv.Atoi(p)
+		if err != nil || x < 0 {
+			return nil
+		}
+		n = append(n, x)
+	}
+	if len(n) == 0 || n[0] == 0 {
+		return nil
+	}
+	if n[0] >= 26 {
+		n = append([]int{1}, n...)
+	}
+	if len(n) > 3 {
+		n = n[:3]
+	}
+	return n
+}
+
+func cmpVer(a, b []int) int {
+	for i := 0; i < len(a) || i < len(b); i++ {
+		var x, y int
+		if i < len(a) {
+			x = a[i]
+		}
+		if i < len(b) {
+			y = b[i]
+		}
+		if x != y {
+			if x < y {
+				return -1
+			}
+			return 1
+		}
+	}
+	return 0
+}
+
+// cfCandidate is a file, for one game version it's made for (ver nil:
+// it doesn't say).
+type cfCandidate struct {
+	tag     string
+	ver     []int
+	file    int
+	release bool
+	date    string
+}
+
+// cfCandidates lists a file once for each Bedrock version it's made for.
+func cfCandidates(file int, tags []string, release bool, date string) []cfCandidate {
+	var out []cfCandidate
+	for _, t := range tags {
+		if v := bedrockVer(t); v != nil {
+			out = append(out, cfCandidate{tag: t, ver: v, file: file, release: release, date: date})
+		}
+	}
+	if len(out) == 0 {
+		out = append(out, cfCandidate{file: file, release: release, date: date})
+	}
+	return out
+}
+
+// cfPick chooses the file for a Bedrock server on version server: the one
+// made for the newest version that isn't newer than the server (add-ons
+// made for an older version keep working), a release over a beta, the
+// newest. When every file needs a newer Minecraft, ok is false and needs is
+// the oldest version one is made for. Without a server version, the newest
+// file is chosen.
+func cfPick(cands []cfCandidate, server []int) (best cfCandidate, ok bool, needs string) {
+	better := func(a, b cfCandidate) bool {
+		if c := cmpVer(a.ver, b.ver); c != 0 && server != nil {
+			return c > 0
+		}
+		if a.release != b.release {
+			return a.release
+		}
+		if a.date != b.date {
+			return a.date > b.date
+		}
+		return a.file > b.file
+	}
+	var oldest []int
+	for _, c := range cands {
+		if server != nil && c.ver != nil && cmpVer(c.ver, server) > 0 {
+			if oldest == nil || cmpVer(c.ver, oldest) < 0 {
+				oldest, needs = c.ver, c.tag
+			}
+			continue
+		}
+		if !ok || better(c, best) {
+			best, ok = c, true
+		}
+	}
+	if ok {
+		needs = ""
+	}
+	return best, ok, needs
+}
+
+func (c cfMod) result(server []int) (CFResult, string) {
 	r := CFResult{ID: c.ID, Name: c.Name, Description: c.Summary, Downloads: int64(c.DownloadCount),
 		Page: httpsOnly(c.Links.WebsiteURL), Installable: c.AllowModDistribution == nil || *c.AllowModDistribution}
 	if c.Logo != nil {
@@ -276,6 +411,30 @@ func (c cfMod) result() CFResult {
 	if len(c.Authors) > 0 {
 		r.Author = c.Authors[0].Name
 	}
+	if server != nil {
+		// A Bedrock server: the file it would get, and what that's made for.
+		var order []int
+		tags, release := map[int][]string{}, map[int]bool{}
+		for _, f := range c.LatestFilesIndexes {
+			if _, seen := tags[f.FileID]; !seen {
+				order = append(order, f.FileID)
+			}
+			tags[f.FileID] = append(tags[f.FileID], f.GameVersion)
+			release[f.FileID] = f.ReleaseType == 1
+		}
+		var cands []cfCandidate
+		for _, id := range order {
+			cands = append(cands, cfCandidates(id, tags[id], release[id], "")...)
+		}
+		best, ok, needs := cfPick(cands, server)
+		if !ok {
+			return r, needs
+		}
+		if best.tag != "" {
+			r.Versions = []string{best.tag}
+		}
+		return r, ""
+	}
 	seen := map[string]bool{}
 	for _, f := range c.LatestFilesIndexes {
 		if plainVersion.MatchString(f.GameVersion) && !seen[f.GameVersion] && len(r.Versions) < 3 {
@@ -283,25 +442,28 @@ func (c cfMod) result() CFResult {
 			r.Versions = append(r.Versions, f.GameVersion)
 		}
 	}
-	return r
+	return r, ""
 }
 
-// SearchCurseForge searches a kind of thing on CurseForge.
-func (m *Manager) SearchCurseForge(ctx context.Context, kind, query string) ([]CFResult, error) {
+// SearchCurseForge searches a kind of thing on CurseForge. Only what the
+// panel can install is shown: for a Bedrock server on version forVersion,
+// what's made for it (or an older version); for modpacks, ones for Fabric,
+// Forge or NeoForge. Notes say what was left out.
+func (m *Manager) SearchCurseForge(ctx context.Context, kind, query, forVersion string) ([]CFResult, []string, error) {
 	game := curseForgeJava
 	if kind != CFModpacks {
 		var err error
 		if game, err = m.cfBedrock(ctx); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 	classes, err := m.cfClasses(ctx, game)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	class := cfClassFor(classes, kind)
 	if class == 0 {
-		return nil, fmt.Errorf("CurseForge has no %s section", kind)
+		return nil, nil, fmt.Errorf("CurseForge has no %s section", kind)
 	}
 	q := url.Values{"gameId": {strconv.Itoa(game)}, "classId": {strconv.Itoa(class)}, "pageSize": {"20"}, "sortOrder": {"desc"}}
 	if query = strings.TrimSpace(query); query != "" {
@@ -317,13 +479,38 @@ func (m *Manager) SearchCurseForge(ctx context.Context, kind, query string) ([]C
 		Data []cfMod `json:"data"`
 	}
 	if err := m.cfGet(ctx, "/v1/mods/search?"+q.Encode(), &res); err != nil {
-		return nil, err
+		return nil, nil, err
+	}
+	var server []int
+	if kind != CFModpacks {
+		server = bedrockVer(forVersion)
 	}
 	out := []CFResult{}
+	kept, tooNew, quilt := 0, 0, 0
 	for _, c := range res.Data {
-		out = append(out, c.result())
+		r, needs := c.result(server)
+		switch {
+		case !r.Installable:
+			kept++
+		case needs != "":
+			tooNew++
+		case kind == CFModpacks && !c.runsOnPanel():
+			quilt++
+		default:
+			out = append(out, r)
+		}
 	}
-	return out, nil
+	var notes []string
+	if tooNew > 0 {
+		notes = append(notes, fmt.Sprintf("%d more found need a newer Minecraft than this server's %s, so they're not shown.", tooNew, forVersion))
+	}
+	if quilt > 0 {
+		notes = append(notes, fmt.Sprintf("%d more found are for Quilt, which the panel doesn't run.", quilt))
+	}
+	if kept > 0 {
+		notes = append(notes, fmt.Sprintf("%d more found can only be downloaded from CurseForge's own site.", kept))
+	}
+	return out, notes, nil
 }
 
 type cfFile struct {
@@ -376,6 +563,12 @@ func (m *Manager) cfMod(ctx context.Context, id int) (cfMod, error) {
 // cfNewestFile is a project's newest file (a release over a beta), not a
 // server pack.
 func (m *Manager) cfNewestFile(ctx context.Context, id int) (cfFile, error) {
+	return m.cfFileFor(ctx, id, "")
+}
+
+// cfFileFor is the file for a Bedrock server on version forVersion (see
+// cfPick), or with no version the newest.
+func (m *Manager) cfFileFor(ctx context.Context, id int, forVersion string) (cfFile, error) {
 	var res struct {
 		Data []cfFile `json:"data"`
 	}
@@ -391,13 +584,17 @@ func (m *Manager) cfNewestFile(ctx context.Context, id int) (cfFile, error) {
 	if len(files) == 0 {
 		return cfFile{}, errors.New("it has no files on CurseForge")
 	}
-	sort.SliceStable(files, func(i, j int) bool { return files[i].FileDate > files[j].FileDate })
+	byID := map[int]cfFile{}
+	var cands []cfCandidate
 	for _, f := range files {
-		if f.ReleaseType == 1 {
-			return f, nil
-		}
+		byID[f.ID] = f
+		cands = append(cands, cfCandidates(f.ID, f.GameVersions, f.ReleaseType == 1, f.FileDate)...)
 	}
-	return files[0], nil
+	best, ok, needs := cfPick(cands, bedrockVer(forVersion))
+	if !ok {
+		return cfFile{}, fmt.Errorf("it needs Minecraft %s or newer, and this server has %s", needs, forVersion)
+	}
+	return byID[best.file], nil
 }
 
 // cfNotDistributable says a file can't be downloaded by the panel.
@@ -434,7 +631,7 @@ func (s *Server) InstallCurseForge(ctx context.Context, id int) (name string, re
 	if mod.AllowModDistribution != nil && !*mod.AllowModDistribution {
 		return mod.Name, res, world, cfNotDistributable(mod.Name, page)
 	}
-	f, err := s.m.cfNewestFile(ctx, id)
+	f, err := s.m.cfFileFor(ctx, id, s.Status().Version)
 	if err != nil {
 		return mod.Name, res, world, fmt.Errorf("%s: %w", mod.Name, err)
 	}

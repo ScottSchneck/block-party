@@ -13,9 +13,19 @@
     its server pack when it has one, or its mods (leaving out ones only for
     players' games, texture packs and shaders) and settings.
 
-  Some creators only allow downloads from CurseForge itself; the panel
-  respects that and says where to get those. The key is checked with
-  CurseForge, kept in its own file on the server, and never shown again.
+  Searches only show what will work: for a Bedrock server, add-ons made
+  for its Minecraft version or an older one (the panel installs the file
+  made for the server's version when a creator posts one per version);
+  for modpacks, ones for Fabric, Forge or NeoForge (not Quilt, which the
+  panel doesn't run). Some creators only allow downloads from CurseForge
+  itself; those are left out too. Each search says how many it hid and
+  why. The key is checked with CurseForge, kept in its own file on the
+  server, and never shown again.
+- **Add-ons that need a newer Minecraft aren't installed.** An add-on's
+  manifest says the oldest Minecraft it runs on; when that's newer than
+  the server's, the panel says so instead of installing something the
+  server would quietly leave out. This applies to uploaded add-ons too.
+- Modrinth modpack search leaves out packs that are only for Quilt.
 
 ## 1.5.1
 

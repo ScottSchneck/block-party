@@ -34,9 +34,10 @@ type ModpackResult struct {
 	Versions []string `json:"versions,omitempty"`
 }
 
-// SearchModpacks looks for modpacks on Modrinth that run on a server.
+// SearchModpacks looks for modpacks on Modrinth that run on a server, with
+// a loader the panel runs (not Quilt only).
 func (m *Manager) SearchModpacks(ctx context.Context, query string) ([]ModpackResult, error) {
-	q := url.Values{"limit": {"20"}, "facets": {`[["project_type:modpack"],["server_side:required","server_side:optional"]]`}}
+	q := url.Values{"limit": {"20"}, "facets": {`[["project_type:modpack"],["server_side:required","server_side:optional"],["categories:fabric","categories:forge","categories:neoforge"]]`}}
 	if query = strings.TrimSpace(query); query != "" {
 		q.Set("query", query)
 	} else {
