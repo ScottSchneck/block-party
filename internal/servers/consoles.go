@@ -3,6 +3,7 @@ package servers
 import (
 	"context"
 	"crypto/sha256"
+	"crypto/sha512"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -50,13 +51,56 @@ type consolePlugin struct {
 	Name     string // its own name (plugin.yml)
 	File     string
 	Label    string
-	Required bool // without it consoles can't join
+	Required bool   // without it consoles can't join
+	Dir      string // plugins (Paper, Purpur) or mods (Fabric)
+	// Source: "geyser:<platform>" (download.geysermc.org), "hangar" (Hangar's
+	// ViaVersion), or "modrinth:<project>" (for the server's Minecraft
+	// version and mod loader).
+	Source string
 }
 
 var consolePlugins = []consolePlugin{
-	{Key: "geyser", Name: "Geyser-Spigot", File: "Geyser-Spigot.jar", Label: "Geyser", Required: true},
-	{Key: "floodgate", Name: "floodgate", File: "floodgate-spigot.jar", Label: "Floodgate", Required: true},
-	{Key: "viaversion", Name: "ViaVersion", File: "ViaVersion.jar", Label: "ViaVersion"},
+	{Key: "geyser", Name: "Geyser-Spigot", File: "Geyser-Spigot.jar", Label: "Geyser", Required: true, Dir: "plugins", Source: "geyser:spigot"},
+	{Key: "floodgate", Name: "floodgate", File: "floodgate-spigot.jar", Label: "Floodgate", Required: true, Dir: "plugins", Source: "geyser:spigot"},
+	{Key: "viaversion", Name: "ViaVersion", File: "ViaVersion.jar", Label: "ViaVersion", Dir: "plugins", Source: "hangar"},
+}
+
+// fabricConsolePlugins: Geyser and Floodgate's Fabric mods, and the Fabric
+// API they need. A copy put in mods/ by hand (fabric-api-0.x.jar) is used
+// instead of the panel's own.
+var fabricConsolePlugins = []consolePlugin{
+	{Key: "geyser", Name: "geyser", File: "Geyser-Fabric.jar", Label: "Geyser", Required: true, Dir: "mods", Source: "geyser:fabric"},
+	{Key: "floodgate", Name: "floodgate", File: "floodgate-fabric.jar", Label: "Floodgate", Required: true, Dir: "mods", Source: "modrinth:floodgate"},
+	{Key: "fabric-api", Name: "fabric-api", File: "fabric-api.jar", Label: "Fabric API", Required: true, Dir: "mods", Source: "modrinth:fabric-api"},
+}
+
+// consoleSet is console support's plugins (or mods) for a server type; nil
+// for types consoles can't join.
+func consoleSet(loader string) []consolePlugin {
+	switch loader {
+	case LoaderPaper, LoaderPurpur, "":
+		return consolePlugins
+	case LoaderFabric:
+		return fabricConsolePlugins
+	}
+	return nil
+}
+
+// consoleSetLocked is the server's. Caller holds s.mu.
+func (s *Server) consoleSetLocked() []consolePlugin { return consoleSet(s.loaderLocked()) }
+
+func (s *Server) consoleSet() []consolePlugin {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.consoleSetLocked()
+}
+
+// modrinthLoader is the loader name Modrinth uses for a server type.
+func modrinthLoader(loader string) string {
+	if runsMods(loader) {
+		return loader
+	}
+	return "paper"
 }
 
 // pluginRelease is a plugin build to download.
@@ -70,7 +114,9 @@ func (r pluginRelease) id() string { return strings.ToLower(r.SHA256) }
 
 // consolesOn reports whether console players are wanted on this server.
 // Caller holds s.mu.
-func (s *Server) consolesOnLocked() bool { return s.isJava() && !s.meta.NoConsoles }
+func (s *Server) consolesOnLocked() bool {
+	return s.isJava() && !s.meta.NoConsoles && len(s.consoleSetLocked()) > 0
+}
 
 // ConsolesOn reports whether console players are wanted on this server.
 func (s *Server) ConsolesOn() bool {
@@ -80,20 +126,47 @@ func (s *Server) ConsolesOn() bool {
 }
 
 // consolesInstalled reports whether Geyser and Floodgate are in plugins/.
-func (s *Server) consolesInstalled() bool {
-	for _, p := range consolePlugins {
-		if p.Required && !fileExists(filepath.Join(s.dir(), "plugins", p.File)) {
+func (s *Server) consolesInstalled() bool { return s.consolesInstalledIn(s.consoleSet()) }
+
+// consolesInstalledLocked is consolesInstalled for callers holding s.mu.
+func (s *Server) consolesInstalledLocked() bool { return s.consolesInstalledIn(s.consoleSetLocked()) }
+
+func (s *Server) consolesInstalledIn(set []consolePlugin) bool {
+	if len(set) == 0 {
+		return false
+	}
+	for _, p := range set {
+		if p.Required && !fileExists(filepath.Join(s.dir(), p.Dir, p.File)) && s.otherModCopy(p) == "" {
 			return false
 		}
 	}
 	return true
 }
 
+// otherModCopy returns the file name of a copy of a Fabric console mod put
+// in mods/ by hand (fabric-api-0.92.jar), which is used instead of the
+// panel's own, or "".
+func (s *Server) otherModCopy(p consolePlugin) string {
+	if p.Dir != "mods" {
+		return ""
+	}
+	entries, _ := os.ReadDir(filepath.Join(s.dir(), "mods"))
+	prefix := strings.ToLower(p.Name)
+	for _, e := range entries {
+		n := strings.ToLower(e.Name())
+		if strings.EqualFold(e.Name(), p.File) || !strings.HasSuffix(n, ".jar") || !strings.HasPrefix(n, prefix) {
+			continue
+		}
+		return e.Name()
+	}
+	return ""
+}
+
 // ---- where the plugins come from ----
 
 // latestGeyserProject asks GeyserMC for the newest build of geyser or
-// floodgate (the Spigot/Paper flavour).
-func (m *Manager) latestGeyserProject(ctx context.Context, project string) (pluginRelease, error) {
+// floodgate for a platform ("spigot" for Paper, "fabric").
+func (m *Manager) latestGeyserProject(ctx context.Context, project, platform string) (pluginRelease, error) {
 	var b struct {
 		Version   string `json:"version"`
 		Build     int    `json:"build"`
@@ -106,13 +179,13 @@ func (m *Manager) latestGeyserProject(ctx context.Context, project string) (plug
 	if err := m.getJSON(ctx, base+"/versions/latest/builds/latest", &b); err != nil {
 		return pluginRelease{}, err
 	}
-	d, ok := b.Downloads["spigot"]
+	d, ok := b.Downloads[platform]
 	if !ok || b.Version == "" || b.Build <= 0 || len(d.SHA256) != 64 {
-		return pluginRelease{}, fmt.Errorf("geysermc.org has no Paper download of %s", project)
+		return pluginRelease{}, fmt.Errorf("geysermc.org has no %s download of %s", platform, project)
 	}
 	return pluginRelease{
 		Version: fmt.Sprintf("%s (build %d)", b.Version, b.Build),
-		URL:     fmt.Sprintf("%s/versions/%s/builds/%d/downloads/spigot", base, url.PathEscape(b.Version), b.Build),
+		URL:     fmt.Sprintf("%s/versions/%s/builds/%d/downloads/%s", base, url.PathEscape(b.Version), b.Build, platform),
 		SHA256:  strings.ToLower(d.SHA256),
 	}, nil
 }
@@ -121,11 +194,17 @@ func (m *Manager) latestGeyserProject(ctx context.Context, project string) (plug
 // Geyser build for Paper supports (GeyserMC publishes every build there with
 // that list). A server on a newer version than these can't load Geyser.
 func (m *Manager) geyserJavaVersions(ctx context.Context) (map[string]bool, error) {
+	return m.geyserVersionsFor(ctx, LoaderPaper)
+}
+
+// geyserVersionsFor is geyserJavaVersions for a server type (Paper's are
+// also kept for GeyserSupports).
+func (m *Manager) geyserVersionsFor(ctx context.Context, loader string) (map[string]bool, error) {
 	var builds []struct {
 		GameVersions  []string `json:"game_versions"`
 		DatePublished string   `json:"date_published"`
 	}
-	u := m.opts.ModrinthAPI + "/project/geyser/version?loaders=" + url.QueryEscape(`["paper"]`)
+	u := m.opts.ModrinthAPI + "/project/geyser/version?loaders=" + url.QueryEscape(`["`+modrinthLoader(loader)+`"]`)
 	if err := m.getJSON(ctx, u, &builds); err != nil {
 		return nil, err
 	}
@@ -141,6 +220,9 @@ func (m *Manager) geyserJavaVersions(ctx context.Context) (map[string]bool, erro
 	set := map[string]bool{}
 	for _, v := range builds[newest].GameVersions {
 		set[v] = true
+	}
+	if modrinthLoader(loader) != "paper" {
+		return set, nil
 	}
 	m.geyserMC.mu.Lock()
 	m.geyserMC.versions, m.geyserMC.at = set, time.Now()
@@ -229,19 +311,32 @@ func (m *Manager) latestViaVersion(ctx context.Context) (pluginRelease, error) {
 // consoleReleases returns the newest build of each console plugin. errs has
 // a reason for each one that couldn't be found.
 func (m *Manager) consoleReleases(ctx context.Context) (map[string]pluginRelease, map[string]error) {
+	return m.consoleReleasesFor(ctx, consolePlugins, "", "")
+}
+
+// consoleReleasesFor is consoleReleases for a set of console plugins, on a
+// Minecraft version and mod loader (for the ones from Modrinth).
+func (m *Manager) consoleReleasesFor(ctx context.Context, set []consolePlugin, minecraft, loader string) (map[string]pluginRelease, map[string]error) {
 	out, errs := map[string]pluginRelease{}, map[string]error{}
 	var mu sync.Mutex
 	var wg sync.WaitGroup
-	for _, p := range consolePlugins {
+	for _, p := range set {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			var r pluginRelease
 			var err error
-			if p.Key == "viaversion" {
+			kind, arg, _ := strings.Cut(p.Source, ":")
+			switch kind {
+			case "hangar":
 				r, err = m.latestViaVersion(ctx)
-			} else {
-				r, err = m.latestGeyserProject(ctx, p.Key)
+			case "modrinth":
+				var f pluginFile
+				if f, err = m.latestModrinthFor(ctx, arg, minecraft, loader); err == nil {
+					r = pluginRelease{Version: f.Version, URL: f.URL, SHA256: f.Hash}
+				}
+			default:
+				r, err = m.latestGeyserProject(ctx, p.Key, arg)
 			}
 			mu.Lock()
 			defer mu.Unlock()
@@ -298,8 +393,8 @@ func (m *Manager) LatestConsolePlugins() map[string]pluginRelease {
 // consolePluginsBehindLocked reports whether Geyser or Floodgate has a newer
 // build than the one installed (or isn't installed). Caller holds s.mu.
 func (s *Server) consolePluginsBehindLocked() bool {
-	if !s.consolesOnLocked() || s.meta.Version == "" {
-		return false
+	if !s.consolesOnLocked() || s.meta.Version == "" || !runsPlugins(s.loaderLocked()) {
+		return false // Fabric's Geyser is checked on Update and overnight
 	}
 	latest := s.m.LatestConsolePlugins()
 	for _, p := range consolePlugins {
@@ -339,11 +434,17 @@ func (s *Server) ensureConsolePlugins(ctx context.Context) (updated bool, err er
 	for k, v := range s.meta.Plugins {
 		have[k] = v
 	}
+	set := s.consoleSetLocked()
+	loader, minecraft := s.loaderLocked(), s.meta.Version
 	s.mu.Unlock()
-	dir := filepath.Join(s.dir(), "plugins")
+	if len(set) == 0 {
+		return false, nil // consoles can't join this type of server
+	}
+	paper := set[0].Dir == "plugins"
+	dir := filepath.Join(s.dir(), set[0].Dir)
 
 	if !on {
-		if jars, err := s.pluginJars(); err == nil {
+		if jars, err := s.pluginJars(); paper && err == nil {
 			var needs []string
 			for _, j := range jars {
 				if j.console || !j.enabled {
@@ -362,9 +463,9 @@ func (s *Server) ensureConsolePlugins(ctx context.Context) (updated bool, err er
 			}
 		}
 		removed := false
-		for _, p := range consolePlugins {
-			if !p.Required {
-				continue // ViaVersion also helps Java players on other versions: it stays
+		for _, p := range set {
+			if !p.Required || p.Key == "fabric-api" {
+				continue // ViaVersion also helps Java players on other versions, and other mods need Fabric API: they stay
 			}
 			if err := os.Remove(filepath.Join(dir, p.File)); err == nil {
 				removed = true
@@ -372,20 +473,32 @@ func (s *Server) ensureConsolePlugins(ctx context.Context) (updated bool, err er
 			delete(have, p.Key)
 		}
 		if removed {
-			s.say("Removed console support (Geyser and Floodgate). Their settings stay in the plugins folder.")
+			s.say("Removed console support (Geyser and Floodgate). Their settings stay in the " + set[0].Dir + " and config folders.")
 		}
 		return false, s.setPlugins(have)
 	}
 
-	releases, errs := s.m.consoleReleases(ctx)
+	releases, errs := s.m.consoleReleasesFor(ctx, set, minecraft, modrinthLoader(loader))
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return false, err
 	}
 	var problems []string
-	jars, _ := s.pluginJars()
-	for _, p := range consolePlugins {
+	jars := map[string]jarEntry{}
+	if paper {
+		jars, _ = s.pluginJars()
+	}
+	for _, p := range set {
 		r, ok := releases[p.Key]
 		path := filepath.Join(dir, p.File)
+		if other := s.otherModCopy(p); other != "" {
+			// A copy put in mods/ by hand is the one that runs (two copies
+			// stop Fabric from starting).
+			if err := os.Remove(path); err == nil {
+				s.say(fmt.Sprintf("Using %s, already in the mods folder, for console support's %s.", other, p.Label))
+			}
+			delete(have, p.Key)
+			continue
+		}
 		if other := otherCopy(jars, p); other != "" {
 			// Two copies of a plugin make Paper refuse one of them: the
 			// one put in by hand is turned off.
@@ -406,7 +519,7 @@ func (s *Server) ensureConsolePlugins(ctx context.Context) (updated bool, err er
 			}
 			continue
 		}
-		if sum, err := fileSHA256(path); err == nil && sum == r.id() {
+		if sum, err := fileSum(path, len(r.SHA256)); err == nil && sum == r.id() {
 			have[p.Key] = sum + " " + r.Version // also right after a restore brought an older one back
 			continue
 		}
@@ -454,6 +567,24 @@ func otherCopy(jars map[string]jarEntry, p consolePlugin) string {
 	return ""
 }
 
+// fileSum returns a file's SHA-512 (n 128) or SHA-256 in hex, to compare
+// with a download's checksum.
+func fileSum(path string, n int) (string, error) {
+	if n != 128 {
+		return fileSHA256(path)
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	h := sha512.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
 // fileSHA256 returns a file's SHA-256 in hex.
 func fileSHA256(path string) (string, error) {
 	f, err := os.Open(path)
@@ -477,8 +608,8 @@ func (s *Server) notePluginFiles() {
 	s.pluginsMu.Lock()
 	defer s.pluginsMu.Unlock()
 	have := map[string]string{}
-	for _, p := range consolePlugins {
-		if sum, err := fileSHA256(filepath.Join(s.dir(), "plugins", p.File)); err == nil {
+	for _, p := range s.consoleSet() {
+		if sum, err := fileSHA256(filepath.Join(s.dir(), p.Dir, p.File)); err == nil {
 			have[p.Key] = sum
 		}
 	}
@@ -811,9 +942,9 @@ func (s *Server) applyConsoleFileChanges() {
 	var todo []JavaPending
 	off := !s.consolesOnLocked()
 	if s.cmd == nil && off {
-		for _, p := range consolePlugins {
-			if p.Required {
-				_ = os.Remove(filepath.Join(s.dir(), "plugins", p.File))
+		for _, p := range s.consoleSetLocked() {
+			if p.Required && p.Key != "fabric-api" {
+				_ = os.Remove(filepath.Join(s.dir(), p.Dir, p.File))
 			}
 		}
 	}

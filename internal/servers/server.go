@@ -79,6 +79,14 @@ type Status struct {
 	ConsolesWaiting string `json:"consolesWaiting,omitempty"`
 	// Hours: when it's open, if it has hours.
 	Hours *HoursStatus `json:"hours,omitempty"`
+	// Java server type ("paper", "fabric"…), its own version, whether it
+	// stays on its Minecraft version, its modpack, and whether consoles can
+	// join this type at all.
+	Loader          string `json:"loader,omitempty"`
+	LoaderVersion   string `json:"loaderVersion,omitempty"`
+	KeepVersion     bool   `json:"keepVersion,omitempty"`
+	Modpack         string `json:"modpack,omitempty"`
+	ConsolesAllowed bool   `json:"consolesAllowed,omitempty"`
 }
 
 const (
@@ -174,7 +182,7 @@ func (s *Server) binary() string {
 		return filepath.Join(s.dir(), hytaleJar)
 	}
 	if s.isJava() {
-		return filepath.Join(s.dir(), paperJar)
+		return s.javaLaunchPath()
 	}
 	return filepath.Join(s.dir(), "bedrock_server")
 }
@@ -206,11 +214,19 @@ func (s *Server) Status() Status {
 			st.MemoryMB = defaultMemoryMB
 		}
 		st.Consoles = s.consolesOnLocked()
-		if r := s.m.LatestPaper(st.Consoles); st.Version != "" && javaNewer(r, st.Version, st.Build) {
+		st.Loader, st.KeepVersion, st.Modpack = s.loaderLocked(), s.meta.KeepVersion, s.meta.Modpack
+		st.ConsolesAllowed = len(s.consoleSetLocked()) > 0
+		if st.Loader != LoaderPaper {
+			st.LoaderVersion = s.meta.LoaderVersion
+			if st.Loader != LoaderPurpur {
+				st.Build = 0
+			}
+		}
+		if r := s.m.LatestPaper(st.Consoles); st.Loader == LoaderPaper && !st.KeepVersion && st.Version != "" && javaNewer(r, st.Version, st.Build) {
 			st.UpdateTo = r.label()
 		}
 		st.ConsolesUpdate = s.consolePluginsBehindLocked()
-		if supported, known := s.m.GeyserSupports(st.Version); st.Consoles && st.Version != "" && known && !supported {
+		if supported, known := s.m.GeyserSupports(st.Version); st.Consoles && runsPlugins(st.Loader) && st.Version != "" && known && !supported {
 			st.ConsolesWaiting = st.Version
 		}
 		st.ConsolesLive = st.Consoles && s.consolesLive && s.cmd != nil && s.state == StateRunning
@@ -456,7 +472,7 @@ func (s *Server) startLocked() error {
 		if err := s.applyJavaProperties(false); err != nil {
 			s.addLineLocked("[Panel] Couldn't update server.properties: " + err.Error())
 		}
-		s.consolesLive = s.consolesOnLocked() && s.consolesInstalled()
+		s.consolesLive = s.consolesOnLocked() && s.consolesInstalledLocked()
 		if s.consolesOnLocked() && !s.consolesLive {
 			s.addLineLocked("[Panel] Console support isn't installed yet, so only Java players can join. Use Update now to install it.")
 		}
@@ -913,6 +929,9 @@ func (s *Server) startUpdate(auto bool) error {
 				}
 				if s.isJava() {
 					what = fmt.Sprintf("Minecraft Java %s (Paper build %d)", s.meta.Version, s.meta.Build)
+					if l := s.loaderLocked(); l != LoaderPaper {
+						what = fmt.Sprintf("Minecraft Java %s (%s %s)", s.meta.Version, LoaderName(l), shortBuild(s.meta.LoaderVersion))
+					}
 				}
 				text := s.meta.Name + " was updated overnight to " + what + "."
 				if s.isJava() && versionBefore == s.meta.Version && buildBefore == s.meta.Build && s.updatedConsoles {

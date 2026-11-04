@@ -585,7 +585,7 @@ func copyWorld(ctx context.Context, dir, snap string, listed map[string]int64) e
 		}
 	}
 	for _, name := range javaSettingsDirs {
-		if !fileExists(filepath.Join(dir, paperJar)) {
+		if !isJavaDir(dir) {
 			break
 		}
 		src := filepath.Join(dir, name)
@@ -881,7 +881,7 @@ func (s *Server) restore(archive *os.File, name string) error {
 	if _, err := os.Stat(filepath.Join(staging, "bedrock_server")); err == nil {
 		full = true
 	}
-	if _, err := os.Stat(filepath.Join(staging, paperJar)); err == nil {
+	if isJavaDir(staging) {
 		full = true // a Java server's backup from before an update
 	}
 	if _, err := os.Stat(filepath.Join(staging, hytaleJar)); err == nil {

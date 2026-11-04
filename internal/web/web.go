@@ -216,6 +216,7 @@ func (s *Server) routes() http.Handler {
 	s.notifyRoutes(mux)
 	s.metricsRoutes(mux)
 	s.taskRoutes(mux)
+	s.javaTypeRoutes(mux)
 	s.fileRoutes(mux)
 	return s.secure(mux)
 }
@@ -370,6 +371,9 @@ func (s *Server) createServer(w http.ResponseWriter, r *http.Request) {
 		Edition    string `json:"edition"`  // "bedrock" (default), "java" or "hytale"
 		JavaName   string `json:"javaName"` // Java: the adder's Minecraft Java username
 		MemoryMB   int    `json:"memoryMB"`
+		Loader     string `json:"loader"`  // Java: paper (default), purpur, vanilla, fabric, forge, neoforge
+		Version    string `json:"version"` // Java: a Minecraft version ("" for the newest)
+		Modpack    string `json:"modpack"` // Java: a Modrinth modpack's project ID (owner only)
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, errors.New("bad request"))
@@ -393,6 +397,19 @@ func (s *Server) createServer(w http.ResponseWriter, r *http.Request) {
 		s.finishCreate(w, r, p, st)
 		return
 	}
+	if req.Edition == servers.TypeJava && req.Modpack != "" {
+		if !p.Owner {
+			writeError(w, http.StatusForbidden, errors.New("only the owner can add modpack servers (their mods run code on the computer)"))
+			return
+		}
+		st, err := s.mgr.CreateModpack(req.Name, req.MemoryMB, servers.ModpackSource{Project: req.Modpack})
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		s.finishCreate(w, r, p, st)
+		return
+	}
 	if req.Edition == servers.TypeJava {
 		var names []string
 		if n := strings.TrimSpace(req.JavaName); n != "" {
@@ -401,7 +418,7 @@ func (s *Server) createServer(w http.ResponseWriter, r *http.Request) {
 				_ = s.mgr.SetOwnerJavaName(n) // remembered for the next Java server
 			}
 		}
-		st, err := s.mgr.CreateJava(req.Name, req.MemoryMB, names...)
+		st, err := s.mgr.CreateJavaOf(req.Name, req.MemoryMB, servers.JavaChoice{Loader: req.Loader, Version: req.Version}, names...)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, err)
 			return

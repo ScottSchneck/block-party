@@ -444,7 +444,7 @@ func decodeJSON(resp *http.Response, v any) error {
 var javaSettingsFiles = []string{"ops.json", "banned-players.json", "banned-ips.json", "eula.txt", "bukkit.yml", "spigot.yml", "commands.yml", "help.yml", "permissions.yml"}
 
 // javaSettingsDirs are folders of settings kept in backups.
-var javaSettingsDirs = []string{"config", "plugins"}
+var javaSettingsDirs = []string{"config", "plugins", "mods", "defaultconfigs"}
 
 func fileExists(p string) bool {
 	_, err := os.Stat(p)

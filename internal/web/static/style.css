@@ -690,3 +690,9 @@ a.file-name:hover { color: var(--link); }
 .people.files .who small { padding-left: 26px; }
 .file-text { width: 100%; min-height: 60vh; font-size: 13px; line-height: 1.5; tab-size: 4; white-space: pre; resize: vertical; }
 #file-editor h3 { margin: 0; font-size: 14px; word-break: break-all; }
+
+/* Java server types (Add server) */
+.java-type { display: grid; gap: 10px; }
+.add-modpack { display: grid; gap: 8px; }
+.add-modpack .people li.chosen { background: color-mix(in srgb, var(--accent) 10%, transparent); border-radius: 8px; padding-left: 8px; padding-right: 8px; }
+#modpack-results { max-height: 340px; overflow-y: auto; }

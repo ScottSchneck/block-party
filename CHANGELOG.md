@@ -19,6 +19,16 @@
   care of the server can use it. Only the owner can change plugins, mods
   and the server's programs, or move or delete whole folders, and nothing
   outside the server's folder can be reached, even through links.
+- **More Java server types and versions.** Add server → Java now offers
+  Paper, Purpur, Vanilla, Fabric, Forge and NeoForge, on any Minecraft
+  version each has (older ones get the Java they need, down to Java 8).
+  Fabric servers can take console players too (Geyser and Floodgate for
+  Fabric). A server on a chosen version, and every modded one, stays on its
+  Minecraft version when updated.
+- **Modpacks.** The owner can add a server from a Modrinth modpack, found
+  by searching Modrinth or uploaded as a .mrpack file: the panel installs
+  the Minecraft version, mod loader and server-side mods it needs, checking
+  every download. (CurseForge packs aren't supported yet.)
 - Fixed the word "null" showing after the port at the top of a server's
   page when the server has no open hours.
 

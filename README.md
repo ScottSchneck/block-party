@@ -344,14 +344,43 @@ forwards it made when it stops.
 
 ### Java servers
 
-**Add server → Java (Paper)** sets up a Minecraft: Java Edition server running
-[Paper](https://papermc.io), which is faster than Mojang's own server and
-runs plugins. The panel downloads:
+**Add server → Java** sets up a Minecraft: Java Edition server. By default it
+runs [Paper](https://papermc.io), which is faster than Mojang's own server
+and runs plugins. The panel downloads:
 
 - the newest stable Paper build, from papermc.io;
 - the Java it needs (Eclipse Temurin from adoptium.net), once, into
   `/data/runtimes`. Minecraft 26.x needs Java 25; 1.20.5 to 1.21.x need
   Java 21.
+
+#### Server types, older versions and modpacks
+
+**Server type** on the Add server page picks what runs the server, and
+**Minecraft version** picks any version the type has (the newest by
+default):
+
+| Type | What it's for | Consoles |
+| --- | --- | --- |
+| Paper | Fast, runs plugins (the Plugins tab) | Yes |
+| [Purpur](https://purpurmc.org) | Paper with extra settings; same plugins | Yes |
+| Vanilla | Mojang's own server | No |
+| [Fabric](https://fabricmc.net) | Fabric mods | Yes (Geyser for Fabric) |
+| [Forge](https://minecraftforge.net) | Forge mods, 1.12.2 and later | No |
+| [NeoForge](https://neoforged.net) | NeoForge mods, 1.20.2 and later | No |
+| Modpack | A Modrinth modpack (.mrpack), searched or uploaded; owner only | Fabric packs only |
+
+Mods go in the server's `mods` folder: the owner adds them in the **Files**
+tab, made for the server's Minecraft version and loader. A modpack server
+gets the Minecraft version, loader and mods its pack asks for (only the
+pack's server-side files, each checked against its checksum). CurseForge
+packs aren't supported yet.
+
+A server on a version you chose, and every modded one, stays on its
+Minecraft version: **Update** gets the newest build of the same version
+(Purpur build, Fabric loader, Forge or NeoForge), since mods only work on
+the version they're made for, and overnight updates only restart it.
+Consoles can only join the newest Minecraft versions (whatever Geyser
+supports); on an older one, console support is turned off.
 
 New Java servers have their allowlist on, account checks on, and a
 protected-spawn of 0. Give your Minecraft Java username when you add one to

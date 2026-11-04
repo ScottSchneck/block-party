@@ -307,7 +307,7 @@ let ovPlayersKey = ""; // what the Overview player list last showed
 let dashKey = "";      // what the dashboard last showed
 
 function renderDetailHead(s) {
-  const key = JSON.stringify([s.id, s.name, s.state, s.version, s.build, s.updateTo, s.consoles, s.consolesUpdate, s.consolesLive, s.consolesWaiting, s.port, s.message, latestVersion, s.players.length, prefs.style, s.access, s.hours]);
+  const key = JSON.stringify([s.id, s.name, s.state, s.version, s.build, s.loader, s.loaderVersion, s.modpack, s.updateTo, s.consoles, s.consolesUpdate, s.consolesLive, s.consolesWaiting, s.port, s.message, latestVersion, s.players.length, prefs.style, s.access, s.hours]);
   if (key === detailKey) return; // unchanged: keep keyboard focus where it is
   detailKey = key;
   $("detail-name").textContent = s.name;
@@ -315,7 +315,7 @@ function renderDetailHead(s) {
   $("detail-facts").replaceChildren(stateEl(s),
     s.type === "hytale" ? el("span", {}, "Hytale ", el("span", { class: "mono" }, s.version || "…"))
     : s.type === "java"
-      ? el("span", {}, "Java ", el("span", { class: "mono" }, s.version || "…"), s.build ? el("span", { class: "muted" }, ` · Paper build ${s.build}`) : null,
+      ? el("span", {}, "Java ", el("span", { class: "mono" }, s.version || "…"), javaTypeNote(s),
         s.consolesWaiting
           ? el("span", { class: "warn", title: `Geyser doesn't support Minecraft ${s.consolesWaiting} yet; consoles can join once a newer Geyser is out` }, " · consoles after a Geyser update")
           : s.consoles ? el("span", { class: "muted", title: s.consolesLive ? "Consoles, phones and tablets can join now" : "Consoles can join while it's running with console support" }, " · consoles too") : null)
@@ -333,10 +333,22 @@ function renderDetailHead(s) {
     access(s) >= CARE ? updBtn : null].filter(Boolean));
   for (const t of ["players", "settings", "addons", "backups"]) $("tab-" + t).hidden = copying;
   $("tab-addons").hidden = copying || (s.type && s.type !== "bedrock"); // Bedrock add-ons
-  $("tab-plugins").hidden = copying || s.type !== "java" || access(s) < CARE; // Java plugins
+  $("tab-plugins").hidden = copying || s.type !== "java" || !["paper", "purpur", undefined, ""].includes(s.loader) || access(s) < CARE; // Paper and Purpur plugins
   $("tab-tasks").hidden = copying || access(s) < CARE;
   $("tab-files").hidden = copying || access(s) < CARE;
   $("ov-backups-link").textContent = access(s) >= CARE ? "Restore or download" : "See backups";
+}
+
+const loaderLabel = { paper: "Paper", purpur: "Purpur", vanilla: "Vanilla", fabric: "Fabric", forge: "Forge", neoforge: "NeoForge" };
+// javaTypeNote says what runs a Java server: " · Paper build 120", " · Fabric 0.16.9".
+function javaTypeNote(s) {
+  const l = s.loader || "paper";
+  let text = "";
+  if (s.modpack) text = ` · ${s.modpack} (${loaderLabel[l]})`;
+  else if (l === "paper") text = s.build ? ` · Paper build ${s.build}` : "";
+  else if (l === "vanilla") text = " · Vanilla";
+  else text = ` · ${loaderLabel[l]}${s.loaderVersion ? " " + s.loaderVersion : ""}`;
+  return text ? el("span", { class: "muted", title: s.keepVersion ? `Stays on Minecraft ${s.version}: Update gets newer builds of it` : "" }, text) : null;
 }
 
 function confirmUpdate(s) {
@@ -451,7 +463,7 @@ function route() {
     const s = serverList.find((x) => x.id === id);
     let tabOK = !(s && s.state === "importing" && ["players", "settings", "addons", "plugins", "backups", "tasks", "files"].includes(t));
     if (s && (t === "tasks" || t === "files") && access(s) < CARE) tabOK = false;
-    if (s && t === "plugins" && (s.type !== "java" || access(s) < CARE)) tabOK = false;
+    if (s && t === "plugins" && (s.type !== "java" || !["paper", "purpur", undefined, ""].includes(s.loader) || access(s) < CARE)) tabOK = false;
     if (s && t === "addons" && s.type && s.type !== "bedrock") tabOK = false;
     acceptedHash = location.hash;
     setView("server");
@@ -1260,12 +1272,18 @@ $("add-form").addEventListener("submit", async (ev) => {
   try {
     const java = editionChoice() === "java";
     const hytale = editionChoice() === "hytale";
-    const s = await post("/api/servers", hytale ? {
+    const loader = $("add-loader").value;
+    if (java && loader === "modpack" && !modpackChoice) throw new Error("Choose a modpack, or upload a .mrpack file.");
+    const s = java && loader === "modpack" && modpackChoice.file
+      ? await upload($("modpack-drop"), `/api/modpacks/upload?name=${encodeURIComponent($("add-name").value)}&memoryMB=${$("add-memory").value}`, modpackChoice.file, "Setting up the server…")
+      : await post("/api/servers", hytale ? {
       name: $("add-name").value, edition: "hytale",
       memoryMB: Number($("add-memory").value), acceptEula: $("add-eula").checked,
     } : java ? {
       name: $("add-name").value, edition: "java", javaName: $("add-java").value.trim(),
       memoryMB: Number($("add-memory").value), acceptEula: $("add-eula").checked,
+      loader: loader === "modpack" ? "" : loader, version: loader === "modpack" ? "" : $("add-version").value,
+      modpack: loader === "modpack" ? modpackChoice.id : "",
     } : {
       name: $("add-name").value,
       ownerGamertag: $("add-owner").value.trim(),
@@ -1274,6 +1292,8 @@ $("add-form").addEventListener("submit", async (ev) => {
     if (me.owner && !java && !hytale) settings.ownerGamertag = $("add-owner").value.trim();
     if (me.owner && java && $("add-java").value.trim()) settings.ownerJavaName = $("add-java").value.trim();
     $("add-form").reset();
+    modpackChoice = null;
+    $("modpack-file-name").textContent = "";
     await refresh();
     location.hash = serverHref(s.id, "console");
   } catch (err) {
@@ -2513,6 +2533,9 @@ function showEdition() {
   const java = edition === "java", hytale = edition === "hytale";
   $("add-owner-label").hidden = java || hytale;
   $("add-java-label").hidden = !java;
+  $("add-java-type").hidden = !java;
+  $("add-loader-modpack").hidden = !me.owner;
+  $("add-loader-modpack").disabled = !me.owner;
   $("add-memory-label").hidden = !java && !hytale;
   $("hytale-account").hidden = !hytale;
   const mem = $("add-memory");
@@ -2522,17 +2545,81 @@ function showEdition() {
   $("edition-help").textContent = hytale
     ? "For Hytale. The server is downloaded with your Hytale account, and needs at least 4 GB of memory. Players join with the address and port."
     : java
-      ? "For Minecraft: Java Edition on a PC or Mac. Runs Paper, which is faster than Mojang's own server and takes plugins. Consoles, phones and tablets can join too (through Geyser, installed for you)."
+      ? "For Minecraft: Java Edition on a PC or Mac."
       : "For consoles, phones, tablets and Windows: the Minecraft most kids play.";
   $("add-eula-name").textContent = hytale ? "Hytale EULA" : "Minecraft EULA";
   $("add-eula-link").href = hytale ? "https://hytale.com/eula" : "https://www.minecraft.net/eula";
   $("add-source").textContent = hytale ? "The server is downloaded from Hytale, and Java from adoptium.net."
-    : java ? "Paper is downloaded from papermc.io, Java from adoptium.net, and console support from geysermc.org and hangar.papermc.io." : "The server is downloaded from Mojang.";
+    : java ? "The server is downloaded from its makers, Java from adoptium.net, and console support from geysermc.org." : "The server is downloaded from Mojang.";
   const submit = document.querySelector("#add-form button[type=submit]");
   if (submit) submit.disabled = hytale && !hytaleSignedIn;
   if (hytale) loadHytaleAccount();
   if (java && !$("add-java").value) $("add-java").value = me.owner ? settings.ownerJavaName || "" : "";
+  if (java) showLoader();
 }
+
+// ---- Java server types (Add server) ----
+
+const loaderHelp = {
+  paper: "Faster than Mojang's own server, and runs plugins (the Plugins tab). Consoles, phones and tablets can join too, through Geyser, which the panel installs.",
+  purpur: "Paper with many extra settings (in purpur.yml); runs the same plugins. Consoles can join too.",
+  vanilla: "Mojang's own server, nothing added. Consoles can't join it.",
+  fabric: "For Fabric mods. Add mods in the Files tab (the mods folder, owner only), with versions made for this Minecraft. Consoles can join too, through Geyser for Fabric.",
+  forge: "For Forge mods. Add mods in the Files tab (the mods folder, owner only). Consoles can't join modded Forge servers.",
+  neoforge: "For NeoForge mods. Add mods in the Files tab (the mods folder, owner only). Consoles can't join.",
+  modpack: "A whole pack of mods from Modrinth: the panel installs the Minecraft version, mod loader and mods it needs. Packs made for Fabric, Forge and NeoForge work. Give it at least 4 GB of memory.",
+};
+const versionLists = {};
+let modpackChoice = null; // {id, name} from the search, or {file}
+
+async function showLoader() {
+  const loader = $("add-loader").value;
+  const pack = loader === "modpack";
+  $("add-type-help").textContent = loaderHelp[loader] || "";
+  $("add-version-label").hidden = pack;
+  $("add-modpack").hidden = !pack;
+  const mem = $("add-memory");
+  if ((pack || ["fabric", "forge", "neoforge"].includes(loader)) && Number(mem.value) < 4096) mem.value = "4096";
+  if (pack) { if (!$("modpack-results").children.length) searchModpacks(""); return; }
+  const sel = $("add-version");
+  if (!versionLists[loader]) {
+    sel.replaceChildren(el("option", { value: "" }, "Newest (loading the list…)"));
+    try { versionLists[loader] = (await api(`/api/java/versions?loader=${loader}`)).versions || []; }
+    catch (err) { sel.replaceChildren(el("option", { value: "" }, "Newest")); $("add-type-help").textContent += ` (Couldn't load the versions: ${err.message})`; return; }
+  }
+  if ($("add-loader").value !== loader) return;
+  const list = versionLists[loader];
+  sel.replaceChildren(el("option", { value: "" }, list.length ? `Newest (${list[0]})` : "Newest"),
+    ...list.map((v) => el("option", { value: v }, v)));
+}
+$("add-loader").addEventListener("change", showLoader);
+
+async function searchModpacks(q) {
+  const box = $("modpack-results");
+  box.replaceChildren(emptyRow("Searching…"));
+  try {
+    const v = await api("/api/modpacks?q=" + encodeURIComponent(q));
+    const results = v.results || [];
+    box.replaceChildren(...(results.length ? results.map((p) => {
+      const chosen = modpackChoice && modpackChoice.id === p.id;
+      return el("li", { class: chosen ? "chosen" : "" },
+        p.icon ? el("img", { src: p.icon, alt: "", class: "plugin-icon", width: 40, height: 40, loading: "lazy" }) : null,
+        el("span", { class: "who" }, el("b", {}, p.name), el("small", {}, `${p.description} · by ${p.author}${p.versions && p.versions.length ? " · Minecraft " + p.versions[0] : ""}`)),
+        p.page ? el("a", { href: p.page, target: "_blank", rel: "noopener noreferrer", class: "small" }, "About") : null,
+        btn(chosen ? "Chosen" : "Choose", () => { modpackChoice = { id: p.id, name: p.name }; $("modpack-file-name").textContent = ""; if (!$("add-name").value) $("add-name").value = p.name.slice(0, 40); searchModpacks($("modpack-q").value.trim()); }, chosen ? "primary" : ""));
+    }) : [emptyRow("No modpacks found.")]));
+  } catch (err) { box.replaceChildren(emptyRow("Couldn't search Modrinth: " + err.message)); }
+}
+$("modpack-search").addEventListener("click", () => searchModpacks($("modpack-q").value.trim()));
+$("modpack-q").addEventListener("keydown", (ev) => { if (ev.key === "Enter") { ev.preventDefault(); searchModpacks($("modpack-q").value.trim()); } });
+$("modpack-file").addEventListener("change", (ev) => {
+  const f = ev.target.files[0];
+  if (!f) return;
+  modpackChoice = { file: f };
+  $("modpack-file-name").textContent = f.name;
+  if (!$("add-name").value) $("add-name").value = f.name.replace(/\.mrpack$/i, "").slice(0, 40);
+  searchModpacks($("modpack-q").value.trim());
+});
 for (const r of document.querySelectorAll("input[name=edition]")) r.addEventListener("change", showEdition);
 
 // ---- Hytale account ----
@@ -2593,7 +2680,7 @@ function renderMemory() {
 }
 function renderConsoles() {
   const s = serverList.find((x) => x.id === selected);
-  const show = !!s && s.type === "java" && access(s) >= CARE;
+  const show = !!s && s.type === "java" && s.consolesAllowed && access(s) >= CARE;
   $("consoles-card").hidden = !show;
   if (!show) return;
   const box = $("consoles-on");

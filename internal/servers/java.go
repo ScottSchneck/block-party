@@ -2,6 +2,8 @@ package servers
 
 import (
 	"context"
+	"crypto/md5"
+	"crypto/sha1"
 	"crypto/sha256"
 	"crypto/sha512"
 	"encoding/hex"
@@ -148,6 +150,15 @@ func (m *Manager) latestPaper(ctx context.Context, allowed map[string]bool) (Pap
 				best = bi
 			}
 		}
+		if best < 0 && len(allowed) == 1 {
+			// A version chosen by hand (an old one): its newest build, even
+			// if PaperMC never marked one stable.
+			for bi, b := range builds {
+				if _, ok := b.Downloads["server:default"]; ok && (best < 0 || b.ID > builds[best].ID) {
+					best = bi
+				}
+			}
+		}
 		if best < 0 {
 			continue
 		}
@@ -247,15 +258,7 @@ func (m *Manager) javaMajorFor(ctx context.Context, mc string) int {
 			}
 		}
 	}
-	switch {
-	case !versionNewer("26", mc): // 26.1 and later (the yearly versions)
-		return 25
-	case !versionNewer("1.20.5", mc):
-		return 21
-	case !versionNewer("1.18", mc):
-		return 17
-	}
-	return 17
+	return guessJavaMajor(mc)
 }
 
 func (m *Manager) runtimesDir() string { return filepath.Join(m.opts.DataDir, "runtimes") }
@@ -371,8 +374,13 @@ func (m *Manager) downloadLimited(ctx context.Context, url, dir, sum string, say
 		return "", err
 	}
 	var h hash.Hash = sha256.New()
-	if len(sum) == 128 { // Modrinth gives SHA-512
+	switch len(sum) {
+	case 128: // Modrinth gives SHA-512
 		h = sha512.New()
+	case 40: // Mojang and Maven give SHA-1
+		h = sha1.New()
+	case 32: // Purpur gives MD5
+		h = md5.New()
 	}
 	_, err = io.Copy(h, f)
 	f.Close()
@@ -396,18 +404,38 @@ func (s *Server) installJava(update bool) error {
 	current, build := s.meta.Version, s.meta.Build
 	// Overnight, a held server only gets its console support updated.
 	pluginsOnly := update && s.autoUpdating && s.meta.HoldVersion
+	loader, keep := s.loaderLocked(), s.meta.KeepVersion && s.meta.Version != ""
 	s.mu.Unlock()
-	_, statErr := os.Stat(filepath.Join(s.dir(), paperJar))
+	_, statErr := os.Stat(s.javaLaunchPath())
 	if pluginsOnly && statErr == nil {
 		return s.installConsoles(ctx, true)
 	}
+	s.mu.Lock()
+	pack := s.meta.PackSource
+	s.mu.Unlock()
+	if pack != "" {
+		return s.installModpack(ctx)
+	}
+	if loader != LoaderPaper {
+		return s.installLoader(ctx, update)
+	}
 
 	s.say("Asking PaperMC for the current Paper server…")
-	r, err := s.m.latestPaper(ctx, nil)
+	var only map[string]bool
+	if keep {
+		only = map[string]bool{current: true} // a chosen version stays
+	}
+	r, err := s.m.latestPaper(ctx, only)
+	if errors.Is(err, errNoPaperForGeyser) && keep {
+		err = fmt.Errorf("PaperMC has no build of Minecraft %s", current)
+	}
 	if err != nil {
 		return err
 	}
-	if s.ConsolesOn() {
+	if !update && keep {
+		s.consolesForVersion(ctx, r.Version)
+	}
+	if s.ConsolesOn() && !keep {
 		// Geyser needs a Minecraft version it supports: a newer one makes
 		// it fail to start, and consoles can't join.
 		if allowed, gerr := s.m.geyserJavaVersions(ctx); gerr != nil {
@@ -593,7 +621,7 @@ func (s *Server) javaCommand() (string, []string, error) {
 		"-XX:+UseG1GC", "-XX:+ParallelRefProcEnabled", "-XX:MaxGCPauseMillis=200",
 		"-Dfile.encoding=UTF-8",
 	}
-	if s.consolesLive || fileExists(filepath.Join(s.dir(), "plugins", consolePlugins[0].File)) {
+	if set := s.consoleSetLocked(); s.consolesLive || (len(set) > 0 && fileExists(filepath.Join(s.dir(), set[0].Dir, set[0].File))) {
 		// Geyser takes console players on the server's own port (UDP), never
 		// its default (the console server list's port), over RakNet; and
 		// over NetherNet (Minecraft 26.60 and later only use that) on the
@@ -619,9 +647,7 @@ func (s *Server) javaCommand() (string, []string, error) {
 			args = append(args, "-DgeyserAdvertiseAddresses="+strings.Join(adv, ","))
 		}
 	}
-	args = append(args,
-		"-jar", paperJar, "--nogui", "--world-container", "worlds")
-	return bin, args, nil
+	return bin, append(args, s.loaderArgs()...), nil
 }
 
 // SetMemory sets how much memory a Java server may use (in MB), from the next

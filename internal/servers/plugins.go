@@ -87,7 +87,7 @@ type PluginsView struct {
 }
 
 var (
-	errNotJavaPlugins = errors.New("plugins are for Java servers")
+	errNotJavaPlugins = errors.New("plugins are for Paper and Purpur servers (other Java servers use mods, in the Files tab)")
 	errNoSuchPlugin   = errors.New("there's no such plugin on this server")
 	errConsolePlugin  = errors.New("that's part of console support: turn it on or off under Settings, Console players")
 )
@@ -352,6 +352,11 @@ func (m *Manager) latestHangar(ctx context.Context, id, minecraft string) (plugi
 }
 
 func (m *Manager) latestModrinth(ctx context.Context, id, minecraft string) (pluginFile, error) {
+	return m.latestModrinthFor(ctx, id, minecraft, "paper")
+}
+
+// latestModrinthFor is latestModrinth for a loader ("paper", "fabric"…).
+func (m *Manager) latestModrinthFor(ctx context.Context, id, minecraft, loader string) (pluginFile, error) {
 	var project struct {
 		ID    string `json:"id"`
 		Slug  string `json:"slug"`
@@ -360,7 +365,7 @@ func (m *Manager) latestModrinth(ctx context.Context, id, minecraft string) (plu
 	if err := m.getJSON(ctx, m.opts.ModrinthAPI+"/project/"+url.PathEscape(id), &project); err != nil {
 		return pluginFile{}, fmt.Errorf("couldn't find it on Modrinth: %w", err)
 	}
-	q := url.Values{"loaders": {`["paper"]`}}
+	q := url.Values{"loaders": {`["` + loader + `"]`}}
 	if minecraft != "" {
 		q.Set("game_versions", `["`+minecraft+`"]`)
 	}
@@ -639,7 +644,7 @@ func (s *Server) matchedRecords(jars map[string]jarEntry) map[string]AddedPlugin
 
 // Plugins returns the Plugins tab of a Java server.
 func (s *Server) Plugins() (PluginsView, error) {
-	if !s.isJava() {
+	if !s.isJava() || !runsPlugins(s.Loader()) {
 		return PluginsView{}, errNotJavaPlugins
 	}
 	jars, err := s.pluginJars()
@@ -677,7 +682,7 @@ func (s *Server) Plugins() (PluginsView, error) {
 // pluginsEditable says whether plugins can be changed now, and returns the
 // server's Minecraft version (which installs and updates need to know).
 func (s *Server) pluginsEditable(needVersion bool) (string, error) {
-	if !s.isJava() {
+	if !s.isJava() || !runsPlugins(s.Loader()) {
 		return "", errNotJavaPlugins
 	}
 	if err := s.EditBlocked(); err != nil {
@@ -1085,7 +1090,7 @@ func (m *Manager) cachedLatestPlugin(ctx context.Context, source, id, minecraft 
 // release for the server's Minecraft version (file → new version).
 func (s *Server) PluginUpdates(ctx context.Context) map[string]string {
 	out := map[string]string{}
-	if !s.isJava() {
+	if !s.isJava() || !runsPlugins(s.Loader()) {
 		return out
 	}
 	jars, err := s.pluginJars()

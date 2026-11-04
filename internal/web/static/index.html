@@ -162,7 +162,7 @@
           <legend>Edition</legend>
           <div class="segmented" role="radiogroup" aria-label="Edition">
             <label><input type="radio" name="edition" value="bedrock" checked><span>Bedrock</span></label>
-            <label><input type="radio" name="edition" value="java"><span>Java (Paper)</span></label>
+            <label><input type="radio" name="edition" value="java"><span>Java</span></label>
             <label><input type="radio" name="edition" value="hytale"><span>Hytale</span></label>
           </div>
           <p class="muted small" id="edition-help">For consoles, phones, tablets and Windows: the Minecraft most kids play.</p>
@@ -173,6 +173,36 @@
         <label id="add-owner-label">Your gamertag
           <input id="add-owner" maxlength="32" placeholder="Optional: you'll be on the allowlist and an operator" autocomplete="off">
         </label>
+        <div id="add-java-type" class="java-type" hidden>
+          <label>Server type
+            <select id="add-loader">
+              <option value="paper">Paper: fast, and runs plugins (recommended)</option>
+              <option value="purpur">Purpur: Paper with extra settings</option>
+              <option value="vanilla">Vanilla: Mojang's own server</option>
+              <option value="fabric">Fabric: for mods</option>
+              <option value="forge">Forge: for mods</option>
+              <option value="neoforge">NeoForge: for mods</option>
+              <option value="modpack" id="add-loader-modpack">A modpack from Modrinth</option>
+            </select>
+          </label>
+          <p id="add-type-help" class="muted small"></p>
+          <label id="add-version-label">Minecraft version
+            <select id="add-version"><option value="">Newest</option></select>
+          </label>
+          <div id="add-modpack" class="add-modpack" hidden>
+            <div class="row">
+              <input id="modpack-q" maxlength="100" placeholder="Search Modrinth modpacks" autocomplete="off" aria-label="Search modpacks">
+              <button type="button" id="modpack-search">Search</button>
+            </div>
+            <ul id="modpack-results" class="people results"></ul>
+            <div class="dropzone" id="modpack-drop">
+              <p class="small">Or upload a <b>.mrpack</b> file:</p>
+              <label class="button">Choose a file<input type="file" id="modpack-file" accept=".mrpack" hidden></label>
+              <span id="modpack-file-name" class="small muted"></span>
+              <div class="upload-progress" hidden><progress max="100" value="0"></progress><span class="small muted"></span></div>
+            </div>
+          </div>
+        </div>
         <label id="add-java-label" hidden>Your Minecraft Java username
           <input id="add-java" maxlength="16" placeholder="Optional: you'll be on the allowlist and an operator" autocomplete="off" autocapitalize="off" spellcheck="false">
         </label>

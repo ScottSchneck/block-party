@@ -21,9 +21,14 @@ import (
 // fakeJava stands in for "java -jar paper.jar": it prints what Paper prints
 // and answers the commands the panel sends.
 const fakeJava = `#!/bin/sh
+case "$*" in
+  *--installServer*) spec=$(cat "$2"); mkdir -p "$(dirname "$spec")"; echo "-cp libraries/x.jar net.example.Main" > "$spec"; echo "The server installed successfully"; exit 0;;
+esac
 echo "[12:00:00 INFO]: args: $*"
-v=$(cut -d' ' -f2 paper.jar 2>/dev/null)
-echo "[12:00:00 INFO]: Starting minecraft server version ${v:-VERSION}"
+if [ -f paper.jar ] || { [ ! -f server.jar ] && [ ! -d libraries ]; }; then
+  v=$(cut -d' ' -f2 paper.jar 2>/dev/null)
+  echo "[12:00:00 INFO]: Starting minecraft server version ${v:-VERSION}"
+fi
 echo "[12:00:01 INFO]: Done (1.234s)! For help, type \"help\""
 while read line; do
   case "$line" in

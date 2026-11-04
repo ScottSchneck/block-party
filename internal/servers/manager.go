@@ -37,6 +37,12 @@ type Options struct {
 	AdoptiumAPI    string
 	MojangVersions string
 	MojangProfiles string
+	// Where the other Java server types come from.
+	PurpurAPI     string
+	FabricMeta    string
+	ForgePromos   string
+	ForgeMaven    string
+	NeoForgeMaven string
 	// Where console support for Java servers comes from.
 	GeyserAPI  string
 	HangarAPI  string
@@ -88,6 +94,7 @@ type Manager struct {
 	playtime      *playtime
 	metrics       *metricStore
 	tasks         *taskState
+	javaVersions  versionListCache
 }
 
 // Meta is what the panel remembers about a server between restarts.
@@ -150,6 +157,19 @@ type Meta struct {
 	ClosedForHours bool      `json:"closedForHours,omitempty"`
 	// Tasks are its scheduled tasks.
 	Tasks []Task `json:"tasks,omitempty"`
+	// Java server types other than Paper: the type, its own version (Fabric
+	// loader, Forge or NeoForge version, Purpur build), and how it starts
+	// (a jar, or "@" and an argument file). KeepVersion: Update stays on
+	// this Minecraft version (chosen by hand, and every modded server).
+	// Modpack is the Modrinth modpack it was made from.
+	Loader        string `json:"loader,omitempty"`
+	LoaderVersion string `json:"loaderVersion,omitempty"`
+	Launch        string `json:"launch,omitempty"`
+	KeepVersion   bool   `json:"keepVersion,omitempty"`
+	Modpack       string `json:"modpack,omitempty"`
+	// PackSource: the modpack still to install ("modrinth:<project>" or
+	// "file:<upload>"), until it's in.
+	PackSource string `json:"packSource,omitempty"`
 }
 
 // The name is from before the panel was called Block Party; it stays so
@@ -172,6 +192,8 @@ func New(opts Options) *Manager {
 		{&opts.MojangVersions, DefaultMojangVersion}, {&opts.MojangProfiles, DefaultMojangProfile},
 		{&opts.GeyserAPI, DefaultGeyserAPI}, {&opts.HangarAPI, DefaultHangarAPI}, {&opts.XboxLookup, DefaultXboxLookup},
 		{&opts.ModrinthAPI, DefaultModrinthAPI},
+		{&opts.PurpurAPI, DefaultPurpurAPI}, {&opts.FabricMeta, DefaultFabricMeta}, {&opts.ForgePromos, DefaultForgePromos},
+		{&opts.ForgeMaven, DefaultForgeMaven}, {&opts.NeoForgeMaven, DefaultNeoForgeMaven},
 		{&opts.HytaleOAuth, DefaultHytaleOAuth}, {&opts.HytaleAccounts, DefaultHytaleAccounts}, {&opts.HytaleSessions, DefaultHytaleSessions},
 	} {
 		if *d.v == "" {
@@ -438,6 +460,34 @@ func (m *Manager) Create(name string, preview bool, extra ...string) (Status, er
 	return m.create(TypeBedrock, name, preview, 0, extra)
 }
 
+// JavaChoice is what kind of Java server to make: the type (Paper if
+// empty) and Minecraft version ("" for the newest).
+type JavaChoice struct {
+	Loader  string
+	Version string
+}
+
+// CreateJavaOf sets up a new Java server of a type and version.
+func (m *Manager) CreateJavaOf(name string, memoryMB int, c JavaChoice, names ...string) (Status, error) {
+	if c.Loader == "" {
+		c.Loader = LoaderPaper
+	}
+	if _, ok := loaderNames[c.Loader]; !ok {
+		return Status{}, errors.New("unknown server type")
+	}
+	c.Version = strings.TrimSpace(c.Version)
+	if c.Version != "" && !plainVersion.MatchString(c.Version) {
+		return Status{}, errors.New("that isn't a Minecraft version")
+	}
+	return m.createWith(TypeJava, name, false, memoryMB, names, func(meta *Meta) {
+		if c.Loader != LoaderPaper {
+			meta.Loader = c.Loader
+		}
+		meta.Version = c.Version
+		meta.KeepVersion = c.Version != "" || runsMods(c.Loader)
+	})
+}
+
 // CreateJava sets up a new Java (Paper) server, downloading Paper and the
 // Java it needs. names (Java usernames) are put on its allowlist and made
 // operators.
@@ -455,6 +505,11 @@ func (m *Manager) CreateHytale(name string, memoryMB int) (Status, error) {
 }
 
 func (m *Manager) create(typ, name string, preview bool, memoryMB int, extra []string) (Status, error) {
+	return m.createWith(typ, name, preview, memoryMB, extra, nil)
+}
+
+// createWith is create with a change to the new server's details.
+func (m *Manager) createWith(typ, name string, preview bool, memoryMB int, extra []string, adjust func(*Meta)) (Status, error) {
 	name = strings.TrimSpace(name)
 	if name == "" || len([]rune(name)) > 40 || strings.ContainsAny(name, "\r\n\t") {
 		return Status{}, errNameInvalid
@@ -489,6 +544,9 @@ func (m *Manager) create(typ, name string, preview bool, memoryMB int, extra []s
 		return Status{}, err
 	}
 	meta := Meta{ID: id, Name: name, Type: typ, Preview: preview, Port: port, PortV6: port + 1, Created: time.Now().UTC(), AutoStart: true, MemoryMB: memoryMB}
+	if adjust != nil {
+		adjust(&meta)
+	}
 	s := newServer(m, meta)
 	s.state = StateInstalling
 	s.busy = true
