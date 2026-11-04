@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.5.1
+
+- **Plugin search only shows plugins that will install.** Hangar and
+  Modrinth match a plugin if any of its versions is for the server's
+  Minecraft; the panel now checks each result has a download for this
+  version and hides the rest (it says how many). Plugins on Modrinth made
+  for Spigot or Bukkit, which Paper and Purpur run, now show and install
+  too; before, only files marked for Paper counted.
+
 ## 1.5.0
 
 - **Computer use graphs.** A server's Overview shows its processor and

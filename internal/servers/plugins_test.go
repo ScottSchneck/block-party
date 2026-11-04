@@ -93,7 +93,7 @@ func (f *fakeJavaWorld) servePlugins(w http.ResponseWriter, r *http.Request) {
 		enc.Encode(map[string]any{"hits": out})
 	case strings.HasPrefix(p, "/modrinth/project/") && strings.HasSuffix(p, "/version"):
 		x := f.plugin(SourceModrinth, strings.TrimSuffix(strings.TrimPrefix(p, "/modrinth/project/"), "/version"))
-		if x == nil || q.Get("loaders") != `["paper"]` || q.Get("game_versions") != `["`+f.version+`"]` {
+		if x == nil || !strings.Contains(q.Get("loaders"), `"paper"`) || q.Get("game_versions") != `["`+f.version+`"]` {
 			enc.Encode([]any{})
 			return
 		}
@@ -176,8 +176,10 @@ func TestJavaPlugins(t *testing.T) {
 	if len(notes) != 0 || len(res) != 3 || res[0].Source != SourceHangar || res[1].Source != SourceModrinth || res[0].Page != "https://hangar.papermc.io/someone/LandClaim" {
 		t.Errorf("search: %+v %v", res, notes)
 	}
-	if res, _ := m.SearchPlugins(t.Context(), "land", "1.20.1"); len(res) != 2 { // Hangar's fake doesn't filter versions
-		t.Errorf("version filter: %+v", res)
+	// Hangar's fake search doesn't filter versions, but its versions do:
+	// what can't be installed on 1.20.1 isn't shown.
+	if res, notes := m.SearchPlugins(t.Context(), "land", "1.20.1"); len(res) != 0 || len(notes) != 1 || !strings.Contains(notes[0], "2 more found") {
+		t.Errorf("version filter: %+v %v", res, notes)
 	}
 
 	// Install: what it needs comes first.

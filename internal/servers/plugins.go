@@ -132,19 +132,62 @@ func (m *Manager) SearchPlugins(ctx context.Context, query, minecraft string) ([
 	if merr != nil {
 		notes = append(notes, "Modrinth couldn't be searched: "+merr.Error())
 	}
-	out := []PluginResult{}
+	all := []PluginResult{}
 	for i := 0; i < len(hangar) || i < len(modrinth); i++ {
 		if i < len(hangar) {
-			out = append(out, hangar[i])
+			all = append(all, hangar[i])
 		}
 		if i < len(modrinth) {
-			out = append(out, modrinth[i])
+			all = append(all, modrinth[i])
 		}
+	}
+	if minecraft == "" {
+		return all, notes
+	}
+	// The sites' searches match a plugin if any of its versions is for this
+	// Minecraft; only keep the ones with a download the server can use.
+	ok := make([]bool, len(all))
+	sem := make(chan struct{}, 8)
+	var cwg sync.WaitGroup
+	for i, r := range all {
+		cwg.Add(1)
+		go func() {
+			defer cwg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			_, err := m.latestPlugin(ctx, r.Source, r.ID, minecraft) // not the update check's cache
+			var nv *noVersionError
+			ok[i] = !errors.As(err, &nv)
+		}()
+	}
+	cwg.Wait()
+	out := []PluginResult{}
+	hidden := 0
+	for i, r := range all {
+		if ok[i] {
+			out = append(out, r)
+		} else {
+			hidden++
+		}
+	}
+	if hidden > 0 {
+		notes = append(notes, fmt.Sprintf("%d more found have no version for Minecraft %s yet, so they're not shown.", hidden, minecraft))
 	}
 	return out, notes
 }
 
-const searchLimit = 12
+// noVersionError: a plugin has no download for the server's Minecraft
+// version (yet).
+type noVersionError struct{ title, minecraft string }
+
+func (e *noVersionError) Error() string {
+	return fmt.Sprintf("%s doesn't have a version for Minecraft %s yet", e.title, e.minecraft)
+}
+
+// paperLoaders are the Modrinth loaders whose plugins Paper and Purpur run.
+const paperLoaders = `["paper","spigot","bukkit","purpur"]`
+
+const searchLimit = 20
 
 func (m *Manager) searchHangar(ctx context.Context, query, minecraft string) ([]PluginResult, error) {
 	q := url.Values{"platform": {"PAPER"}, "limit": {fmt.Sprint(searchLimit)}, "offset": {"0"}}
@@ -188,7 +231,7 @@ func (m *Manager) searchHangar(ctx context.Context, query, minecraft string) ([]
 }
 
 func (m *Manager) searchModrinth(ctx context.Context, query, minecraft string) ([]PluginResult, error) {
-	facets := `[["project_type:plugin"],["categories:paper"]`
+	facets := `[["project_type:plugin"],["categories:paper","categories:spigot","categories:bukkit","categories:purpur"]`
 	if minecraft != "" {
 		facets += `,["versions:` + minecraft + `"]`
 	}
@@ -317,7 +360,7 @@ func (m *Manager) latestHangar(ctx context.Context, id, minecraft string) (plugi
 		title = id
 	}
 	if found == nil {
-		return pluginFile{}, fmt.Errorf("%s doesn't have a version for Minecraft %s yet", title, minecraft)
+		return pluginFile{}, &noVersionError{title, minecraft}
 	}
 	d := found.Downloads["PAPER"]
 	if d.DownloadURL == "" || d.FileInfo == nil || len(d.FileInfo.SHA256) != 64 {
@@ -365,7 +408,11 @@ func (m *Manager) latestModrinthFor(ctx context.Context, id, minecraft, loader s
 	if err := m.getJSON(ctx, m.opts.ModrinthAPI+"/project/"+url.PathEscape(id), &project); err != nil {
 		return pluginFile{}, fmt.Errorf("couldn't find it on Modrinth: %w", err)
 	}
-	q := url.Values{"loaders": {`["` + loader + `"]`}}
+	loaders := `["` + loader + `"]`
+	if loader == "paper" {
+		loaders = paperLoaders // Paper runs Spigot and Bukkit plugins too
+	}
+	q := url.Values{"loaders": {loaders}}
 	if minecraft != "" {
 		q.Set("game_versions", `["`+minecraft+`"]`)
 	}
@@ -402,7 +449,7 @@ func (m *Manager) latestModrinthFor(ctx context.Context, id, minecraft, loader s
 		}
 	}
 	if pick < 0 {
-		return pluginFile{}, fmt.Errorf("%s doesn't have a version for Minecraft %s yet", title, minecraft)
+		return pluginFile{}, &noVersionError{title, minecraft}
 	}
 	v := versions[pick]
 	fi := -1
