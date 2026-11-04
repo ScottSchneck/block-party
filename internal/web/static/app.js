@@ -321,7 +321,7 @@ function renderDetailHead(s) {
           : s.consoles ? el("span", { class: "muted", title: s.consolesLive ? "Consoles, phones and tablets can join now" : "Consoles can join while it's running with console support" }, " · consoles too") : null)
       : el("span", {}, "Bedrock ", el("span", { class: "mono" }, s.version || "…")),
     el("span", {}, "Port ", el("span", { class: "mono" }, String(s.port))),
-    s.hours ? el("span", { class: s.hours.open ? "" : "warn" }, hoursNote(s.hours)) : null);
+    s.hours ? el("span", { class: s.hours.open ? "" : "warn" }, hoursNote(s.hours)) : "");
   $("detail-message").textContent = s.message || "";
   $("detail-message").hidden = !s.message;
   const busy = busyStates.includes(s.state);
@@ -571,6 +571,7 @@ async function loadOverview() {
     api(`/api/servers/${encodeURIComponent(id)}/outside`).catch(() => null),
   ]);
   if (id !== selected || tab !== "overview") return;
+  loadUse(false);
   renderOverviewOutside(outsideV, id);
   if (acts) $("ov-activity").replaceChildren(...(acts.length ? acts.map((e) => activityRow(e, false)) : [emptyRow("Nothing yet.")]));
   // World
@@ -604,6 +605,167 @@ async function loadOverview() {
     $("ov-backups").textContent = (backups.running ? "Backing up now… " : (last ? `Last: ${whenShort(last.time).toLowerCase()}. ` : "No backups yet. ")) + plan;
     $("ov-backup-now").disabled = backups.running;
   }
+}
+
+// ---- computer use (the graphs on the Overview) ----
+
+let useRange = "1h";
+let useFor = "", useAt = 0;
+const SVGNS = "http://www.w3.org/2000/svg";
+function svg(tag, attrs = {}) {
+  const e = document.createElementNS(SVGNS, tag);
+  for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+  return e;
+}
+
+function fmtMB(mb) {
+  if (mb < 1024) return `${Math.round(mb)} MB`;
+  const gb = mb / 1024;
+  return `${gb >= 10 || Number.isInteger(gb) ? Math.round(gb) : gb.toFixed(1)} GB`;
+}
+function fmtPct(v) { return v > 0 && v < 10 ? `${v.toFixed(1)}%` : `${Math.round(v)}%`; }
+function fmtUseTime(t, range) {
+  const d = new Date(t * 1000);
+  return range === "7d" ? d.toLocaleString([], { weekday: "short", hour: "numeric" })
+    : d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
+// niceMax rounds a chart's top up to 1, 2 or 5 times a power of ten.
+function niceMax(v) {
+  if (v <= 0) return 1;
+  const p = Math.pow(10, Math.floor(Math.log10(v)));
+  for (const m of [1, 2, 5, 10]) if (v <= m * p) return m * p;
+  return 10 * p;
+}
+
+// useChart draws one measure as a line over the span, with gaps where the
+// server was off, a dashed reference line (ref), and a hover readout.
+function useChart({ title, now, points, value, fmt, top, ref, refLabel, from, to, step, range, width }) {
+  const W = Math.max(240, Math.round(width)), H = 112, L = 48, R = 10, T = 8, B = 20;
+  const x = (t) => L + (t - from) / (to - from) * (W - L - R);
+  const y = (v) => T + (1 - Math.min(v, top) / top) * (H - T - B);
+  const chart = svg("svg", { viewBox: `0 0 ${W} ${H}`, width: W, height: H, class: "use-svg" });
+  for (const g of [0, top / 2, top]) {
+    chart.append(svg("line", { x1: L, x2: W - R, y1: y(g), y2: y(g), class: "use-grid" }));
+    const lab = svg("text", { x: L - 6, y: y(g) + 4, class: "use-label", "text-anchor": "end" });
+    lab.textContent = fmt(g);
+    chart.append(lab);
+  }
+  for (const [t, anchor] of [[from, "start"], [(from + to) / 2, "middle"], [to, "end"]]) {
+    const lab = svg("text", { x: x(t), y: H - 4, class: "use-label", "text-anchor": anchor });
+    lab.textContent = t === to ? "now" : fmtUseTime(t, range);
+    chart.append(lab);
+  }
+  if (ref && ref <= top) {
+    chart.append(svg("line", { x1: L, x2: W - R, y1: y(ref), y2: y(ref), class: "use-ref" }));
+  }
+  // Runs of points without a gap longer than two steps.
+  let run = [];
+  const runs = [run];
+  points.forEach((p, i) => {
+    if (i > 0 && p.t - points[i - 1].t > step * 2) runs.push(run = []);
+    run.push(p);
+  });
+  for (const r of runs) {
+    if (!r.length) continue;
+    const pts = r.map((p) => `${x(p.t + step / 2).toFixed(1)},${y(value(p)).toFixed(1)}`);
+    if (r.length === 1) {
+      chart.append(svg("circle", { cx: x(r[0].t + step / 2), cy: y(value(r[0])), r: 3, class: "use-dot" }));
+      continue;
+    }
+    chart.append(svg("path", { d: `M${pts[0]} L${pts.slice(1).join(" L")} L${x(r[r.length - 1].t + step / 2).toFixed(1)},${y(0)} L${x(r[0].t + step / 2).toFixed(1)},${y(0)} Z`, class: "use-area" }));
+    chart.append(svg("polyline", { points: pts.join(" "), class: "use-line" }));
+  }
+  const cross = svg("line", { y1: T, y2: H - B, class: "use-cross", visibility: "hidden" });
+  const dot = svg("circle", { r: 4, class: "use-hover-dot", visibility: "hidden" });
+  chart.append(cross, dot);
+
+  const vals = points.map(value);
+  const avg = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
+  const peak = vals.length ? Math.max(...vals) : 0;
+  const tip = el("div", { class: "use-tip", hidden: true });
+  const wrap = el("div", { class: "use-plot", role: "img",
+    "aria-label": vals.length ? `${title}: now ${now == null ? "off" : fmt(now)}, average ${fmt(avg)}, highest ${fmt(peak)}.` : `${title}: no readings yet.` }, chart, tip);
+  const hide = () => { tip.hidden = true; cross.setAttribute("visibility", "hidden"); dot.setAttribute("visibility", "hidden"); };
+  const show = (clientX) => {
+    if (!points.length) return;
+    const box = chart.getBoundingClientRect();
+    const t = from + ((clientX - box.left) / box.width * W - L) / (W - L - R) * (to - from);
+    let best = points[0];
+    for (const p of points) if (Math.abs(p.t + step / 2 - t) < Math.abs(best.t + step / 2 - t)) best = p;
+    if (Math.abs(best.t + step / 2 - t) > step * 2) { hide(); return; }
+    const px = x(best.t + step / 2), py = y(value(best));
+    cross.setAttribute("x1", px); cross.setAttribute("x2", px); cross.setAttribute("visibility", "visible");
+    dot.setAttribute("cx", px); dot.setAttribute("cy", py); dot.setAttribute("visibility", "visible");
+    tip.replaceChildren(el("b", {}, fmt(value(best))), " ", el("span", {}, fmtUseTime(best.t, range === "1h" ? "1h" : range)));
+    tip.hidden = false;
+    const left = px / W * box.width;
+    tip.style.left = `${Math.min(Math.max(left, 50), box.width - 50)}px`;
+  };
+  wrap.addEventListener("pointermove", (ev) => show(ev.clientX));
+  wrap.addEventListener("pointerdown", (ev) => show(ev.clientX));
+  wrap.addEventListener("pointerleave", hide);
+
+  const head = el("div", { class: "use-head" }, el("h3", {}, title),
+    el("span", { class: "use-now" }, now == null ? "off" : fmt(now)),
+    refLabel ? el("span", { class: "use-reflabel small muted" }, refLabel) : null);
+  return { node: el("div", { class: "use-chart" }, head, wrap), avg, peak };
+}
+
+async function loadUse(force) {
+  if (view !== "server" || tab !== "overview" || !selected) return;
+  const id = selected;
+  if (!force && useFor === id + useRange && Date.now() - useAt < 55000) return;
+  let v;
+  try {
+    v = await api(`/api/servers/${encodeURIComponent(id)}/metrics?range=${useRange}`);
+  } catch (err) {
+    if (id === selected) $("ov-use").replaceChildren(el("p", { class: "muted small" }, "Couldn't load the graphs: " + err.message));
+    return;
+  }
+  if (id !== selected || tab !== "overview") return;
+  useFor = id + useRange; useAt = Date.now();
+  useData = Object.assign(v, { range: useRange });
+  drawUse();
+}
+
+let useData = null;
+function drawUse() {
+  const v = useData;
+  if (!v) return;
+  const width = $("ov-use").clientWidth;
+  const span = { "1h": 3600, "24h": 86400, "7d": 604800 }[v.range];
+  const to = Date.now() / 1000, from = to - span;
+  const pts = v.points || [];
+  const now = v.now;
+  const memMost = Math.max(v.limitMB || 0, ...pts.map((p) => p.memMB), now ? now.memMB : 0) * 1.1;
+  const memTop = memMost > 1024 ? niceMax(memMost / 1024) * 1024 : niceMax(memMost);
+  const charts = [
+    useChart({ title: "Processor", now: now ? now.cpu : null, points: pts, value: (p) => p.cpu, fmt: fmtPct,
+      top: niceMax(Math.max(5, ...pts.map((p) => p.cpu), now ? now.cpu : 0)), from, to, step: v.step, range: v.range, width }),
+    useChart({ title: "Memory", now: now ? now.memMB : null, points: pts, value: (p) => p.memMB, fmt: fmtMB, top: memTop,
+      ref: v.limitMB, refLabel: v.limitMB ? `dashed: the ${fmtMB(v.limitMB)} memory setting` : (v.hostMemMB ? `of ${fmtMB(v.hostMemMB)}` : ""), from, to, step: v.step, range: v.range, width }),
+    useChart({ title: "Players", now: now ? now.players : null, points: pts, value: (p) => p.players, fmt: (n) => String(Math.round(n)),
+      top: Math.max(4, Math.ceil(Math.max(0, ...pts.map((p) => p.players)) / 2) * 2), from, to, step: v.step, range: v.range, width }),
+  ];
+  const nodes = charts.map((c) => c.node);
+  if (!pts.length && !now) nodes.unshift(el("p", { class: "muted small" }, "Graphs fill in while the server runs: a reading every 15 seconds, kept for a week."));
+  $("ov-use").replaceChildren(...nodes);
+  const names = ["Processor (% of the computer)", "Memory", "Players"];
+  const fmts = [fmtPct, fmtMB, (n) => String(Math.round(n))];
+  const nowVals = now ? [now.cpu, now.memMB, now.players] : [null, null, null];
+  $("ov-use-table").replaceChildren(
+    el("tr", {}, el("th", {}, ""), el("th", {}, "Now"), el("th", {}, "Average"), el("th", {}, "Highest")),
+    ...charts.map((c, i) => el("tr", {}, el("td", {}, names[i]), el("td", {}, nowVals[i] == null ? "off" : fmts[i](nowVals[i])),
+      el("td", {}, pts.length ? fmts[i](c.avg) : "–"), el("td", {}, pts.length ? fmts[i](c.peak) : "–"))));
+}
+
+let useResize = 0;
+window.addEventListener("resize", () => {
+  clearTimeout(useResize);
+  useResize = setTimeout(() => { if (view === "server" && tab === "overview") drawUse(); }, 150);
+});
+for (const r of document.querySelectorAll('input[name="use-range"]')) {
+  r.addEventListener("change", () => { useRange = r.value; loadUse(true); });
 }
 
 $("ov-command").addEventListener("submit", async (ev) => {
@@ -659,6 +821,10 @@ function clearServerPanes() {
   $("ov-invite").value = "";
   detailKey = "";
   ovPlayersKey = "";
+  useFor = "";
+  useData = null;
+  $("ov-use").replaceChildren();
+  $("ov-use-table").replaceChildren();
 }
 
 async function loadPlayers() {

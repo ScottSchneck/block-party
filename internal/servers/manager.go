@@ -86,6 +86,7 @@ type Manager struct {
 	javaMu        sync.Mutex // one Java runtime install at a time
 	history       *playHistory
 	playtime      *playtime
+	metrics       *metricStore
 }
 
 // Meta is what the panel remembers about a server between restarts.
@@ -179,7 +180,7 @@ func New(opts Options) *Manager {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	m := &Manager{opts: opts, log: opts.Log.With("src", "servers"), servers: map[string]*Server{}, ctx: ctx, cancel: cancel, people: newPeople(opts.DataDir),
-		history: newPlayHistory(opts.DataDir)}
+		history: newPlayHistory(opts.DataDir), metrics: newMetricStore(opts.DataDir)}
 	m.playtime = newPlaytime(m)
 	return m
 }
@@ -338,6 +339,7 @@ func (m *Manager) StopAll() {
 	case <-savesDone:
 	case <-time.After(5 * time.Second):
 	}
+	m.saveMetrics()
 }
 
 // beginWork registers an install or update, unless the panel is shutting

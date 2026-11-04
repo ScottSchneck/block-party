@@ -834,6 +834,21 @@
                 <button type="button" data-cmd="weather clear">Clear weather</button>
               </form>
             </section>
+            <section class="card" id="ov-use-card">
+              <div class="row between">
+                <h2>Computer use</h2>
+                <div class="segmented small-seg" role="radiogroup" aria-label="Time span">
+                  <label><input type="radio" name="use-range" value="1h" checked><span>Hour</span></label>
+                  <label><input type="radio" name="use-range" value="24h"><span>Day</span></label>
+                  <label><input type="radio" name="use-range" value="7d"><span>Week</span></label>
+                </div>
+              </div>
+              <div id="ov-use" class="use-charts"></div>
+              <details class="use-table">
+                <summary>Show as a table</summary>
+                <div class="table-wrap"><table id="ov-use-table" class="ports"></table></div>
+              </details>
+            </section>
           </div>
           <div class="col">
             <section class="card">

@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.5.0
+
+- **Computer use graphs.** A server's Overview shows its processor and
+  memory use and the players on it, over the last hour, day or week. Point
+  at a graph (or tap it) to see the value at that time; "Show as a table"
+  lists the now, average and highest. Readings are kept for a week.
+- Fixed the word "null" showing after the port at the top of a server's
+  page when the server has no open hours.
+
 ## 1.4.3
 
 - **A quieter log.** The details added while getting 1.26.60 consoles

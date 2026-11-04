@@ -214,6 +214,7 @@ func (s *Server) routes() http.Handler {
 	s.offsiteRoutes(mux)
 	s.lifecycleRoutes(mux)
 	s.notifyRoutes(mux)
+	s.metricsRoutes(mux)
 	return s.secure(mux)
 }
 

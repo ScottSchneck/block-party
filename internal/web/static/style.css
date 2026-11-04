@@ -648,3 +648,24 @@ textarea.plain { font: inherit; background: var(--field); color: var(--text); }
 .offsite-server { margin: 14px 0 0; }
 .offsite-server h3 { margin: 0 0 4px; }
 .steps-list li .row { margin-top: 6px; }
+
+/* computer use graphs (Overview) */
+.small-seg span { min-height: 32px; padding: 0 12px; font-size: 13px; }
+.use-charts { display: grid; gap: 14px; margin-top: 12px; }
+.use-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.use-head h3 { margin: 0; font-size: 14px; }
+.use-now { font-family: var(--mono); font-size: 14px; color: var(--text); }
+.use-plot { position: relative; margin-top: 4px; touch-action: pan-y; }
+.use-svg { display: block; max-width: 100%; overflow: visible; }
+.use-grid { stroke: var(--line-2); stroke-width: 1; }
+.use-ref { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 4 4; }
+.use-label { fill: var(--muted); font: 11px var(--mono); }
+.use-line { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.use-area { fill: color-mix(in srgb, var(--accent) 14%, transparent); stroke: none; }
+.use-dot { fill: var(--accent); }
+.use-cross { stroke: var(--muted); stroke-width: 1; }
+.use-hover-dot { fill: var(--accent); stroke: var(--panel); stroke-width: 2; }
+.use-tip { position: absolute; top: -6px; transform: translate(-50%, -100%); background: var(--panel); border: 1px solid var(--line-strong); border-radius: 8px; padding: 4px 8px; font-size: 12px; white-space: nowrap; box-shadow: var(--shadow); pointer-events: none; }
+.use-tip span { color: var(--muted); }
+.use-table { margin-top: 12px; }
+.use-table summary { cursor: pointer; font-size: 13px; color: var(--muted); }

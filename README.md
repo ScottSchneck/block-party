@@ -71,6 +71,10 @@ PS5, and the panel runs a family's servers day to day. See the
   downloads Paper and the Java it needs, and Java servers get the same
   console, players, settings, backups, overnight updates, roles and
   notifications. See [Java servers](#java-servers).
+- **Computer use graphs.** Each server's Overview shows how much of the
+  computer's processor and memory it uses, and how many players were on,
+  over the last hour, day or week (a reading every 15 seconds, kept for a
+  week in `/data/metrics`). Point at a graph to see the value at that time.
 - **Notifications** to your phone (ntfy), a Discord channel, email, or text
   messages (Twilio), in any combination, each with its own choice of events:
   someone wants to join, a server crashes, a backup fails, and more. See
