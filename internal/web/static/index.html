@@ -815,6 +815,7 @@
         <a id="tab-plugins" href="#" data-tab="plugins" hidden>Plugins</a>
         <a id="tab-backups" href="#" data-tab="backups">Backups</a>
         <a id="tab-tasks" href="#" data-tab="tasks" hidden>Tasks</a>
+        <a id="tab-files" href="#" data-tab="files" hidden>Files</a>
         <a id="tab-console" href="#" data-tab="console">Console</a>
       </nav>
 
@@ -1228,6 +1229,38 @@
             <button type="button" id="task-cancel">Cancel</button>
           </div>
         </form>
+      </div>
+
+      <div id="pane-files" hidden>
+        <p id="files-error" class="error" hidden></p>
+        <section class="card" id="files-card">
+          <div class="row between">
+            <nav id="files-crumbs" class="files-crumbs" aria-label="Folder"></nav>
+            <div class="row">
+              <button type="button" id="files-new-folder">New folder</button>
+              <label class="button">Upload<input type="file" id="files-input" multiple hidden></label>
+            </div>
+          </div>
+          <div class="dropzone files-drop" id="files-drop">
+            <p class="small muted">Drop files here to upload them to this folder. A file with the same name is replaced.</p>
+            <div class="upload-progress" hidden><progress max="100" value="0"></progress><span class="small muted"></span></div>
+          </div>
+          <ul id="files-list" class="people files"></ul>
+          <p id="files-note" class="muted small"></p>
+        </section>
+
+        <section class="card" id="file-editor" hidden>
+          <div class="row between">
+            <h3 id="file-editor-name" class="mono"></h3>
+            <div class="row">
+              <button type="button" id="file-save" class="primary">Save</button>
+              <button type="button" id="file-close">Close</button>
+            </div>
+          </div>
+          <p id="file-editor-note" class="muted small"></p>
+          <textarea id="file-text" class="mono file-text" spellcheck="false" wrap="off" aria-label="File contents"></textarea>
+          <p id="file-editor-error" class="error" hidden></p>
+        </section>
       </div>
 
       <div id="pane-console" hidden>

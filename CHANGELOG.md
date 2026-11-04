@@ -12,6 +12,13 @@
   another task (a chain, like a message and then a restart). Restarts and
   stops can warn players first, and any task can be skipped while someone
   is playing. Anyone who takes care of the server can set them up.
+- **A file manager** (a server's Files tab): browse the server's folder,
+  edit text files such as settings and plugin configs (it warns if the
+  server changed a file since you opened it), upload by dropping files on
+  the page, download, rename, make folders and delete. Anyone who takes
+  care of the server can use it. Only the owner can change plugins, mods
+  and the server's programs, or move or delete whole folders, and nothing
+  outside the server's folder can be reached, even through links.
 - Fixed the word "null" showing after the port at the top of a server's
   page when the server has no open hours.
 

@@ -335,6 +335,7 @@ function renderDetailHead(s) {
   $("tab-addons").hidden = copying || (s.type && s.type !== "bedrock"); // Bedrock add-ons
   $("tab-plugins").hidden = copying || s.type !== "java" || access(s) < CARE; // Java plugins
   $("tab-tasks").hidden = copying || access(s) < CARE;
+  $("tab-files").hidden = copying || access(s) < CARE;
   $("ov-backups-link").textContent = access(s) >= CARE ? "Restore or download" : "See backups";
 }
 
@@ -413,6 +414,10 @@ function route() {
     if (!confirm("Leave without saving your notification settings?")) { stay(); return; }
     notifyDirty = false;
   }
+  if (fileDirty && !(parts[0] === "server" && parts[1] === selected && parts[2] === "files")) {
+    if (!confirm("Leave without saving the file you're editing?")) { stay(); return; }
+    closeFileEditor(true);
+  }
   if (next === "joining") next = "help";
   if (!["servers", "backups", "help", "import", "add", "guide", "people", "outside", "upkeep", "notify", "account", "server", "settings", "playtime", "offsite"].includes(next)) next = "servers";
   if ((["import", "guide", "people", "outside", "upkeep", "notify", "settings", "playtime", "offsite"].includes(next) && !me.owner) || (next === "add" && !me.canAdd)) {
@@ -421,7 +426,7 @@ function route() {
   }
   if (next === "server") {
     const id = parts[1];
-    const t = ["overview", "players", "settings", "addons", "plugins", "backups", "tasks", "console"].includes(parts[2]) ? parts[2] : "overview";
+    const t = ["overview", "players", "settings", "addons", "plugins", "backups", "tasks", "files", "console"].includes(parts[2]) ? parts[2] : "overview";
     if (!id) { location.hash = "#/"; return; }
     const known = serverList.find((x) => x.id === id);
     if (known && access(known) < RUN) { location.hash = "#/"; return; }
@@ -434,6 +439,7 @@ function route() {
       resetAddons();
       resetPlugins();
       resetTasks();
+      resetFiles();
       clearServerPanes();
       selected = id;
       $("detail-name").textContent = "";
@@ -443,8 +449,8 @@ function route() {
       if (s) renderDetailHead(s);
     }
     const s = serverList.find((x) => x.id === id);
-    let tabOK = !(s && s.state === "importing" && ["players", "settings", "addons", "plugins", "backups", "tasks"].includes(t));
-    if (s && t === "tasks" && access(s) < CARE) tabOK = false;
+    let tabOK = !(s && s.state === "importing" && ["players", "settings", "addons", "plugins", "backups", "tasks", "files"].includes(t));
+    if (s && (t === "tasks" || t === "files") && access(s) < CARE) tabOK = false;
     if (s && t === "plugins" && (s.type !== "java" || access(s) < CARE)) tabOK = false;
     if (s && t === "addons" && s.type && s.type !== "bedrock") tabOK = false;
     acceptedHash = location.hash;
@@ -499,7 +505,7 @@ function setView(v) {
 
 function showTab(which) {
   tab = which;
-  for (const t of ["overview", "players", "settings", "addons", "plugins", "backups", "tasks", "console"]) {
+  for (const t of ["overview", "players", "settings", "addons", "plugins", "backups", "tasks", "files", "console"]) {
     const a = $("tab-" + t);
     a.href = serverHref(selected, t);
     if (t === which) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
@@ -514,6 +520,7 @@ function showTab(which) {
   else if (which === "plugins") loadPlugins();
   else if (which === "players") loadPlayers();
   else if (which === "tasks") loadTasks();
+  else if (which === "files") loadFiles();
   else loadOverview();
 }
 
@@ -1479,6 +1486,172 @@ $("task-form").addEventListener("submit", async (ev) => {
   } catch (err) {
     $("task-form-error").textContent = err.message;
     $("task-form-error").hidden = false;
+  }
+});
+
+// ---- files tab ----
+
+let filesDir = "";         // the folder shown ("" is the server's folder)
+let filesFor = null;
+let fileOpen = null;       // {path, modTime} of the file in the editor
+let fileDirty = false;
+
+function resetFiles() {
+  filesDir = "";
+  filesFor = null;
+  closeFileEditor(true);
+  $("files-list").replaceChildren();
+  $("files-crumbs").replaceChildren();
+  $("files-error").hidden = true;
+}
+
+function fileIcon(dir) {
+  const i = svg("svg", { viewBox: "0 0 24 24", class: "file-icon", "aria-hidden": "true" });
+  i.append(svg("path", { d: dir ? "M3 6.5A1.5 1.5 0 0 1 4.5 5H9l2 2h8.5A1.5 1.5 0 0 1 21 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z" : "M6 3h8l4 4v14H6zM14 3v4h4" }));
+  return i;
+}
+const joinPath = (dir, name) => (dir ? dir + "/" : "") + name;
+const filesUrl = (what, p) => `${sid()}/files${what}?path=${encodeURIComponent(p)}`;
+
+function showFilesError(err) {
+  $("files-error").textContent = err ? err.message : "";
+  $("files-error").hidden = !err;
+}
+
+async function loadFiles(dir) {
+  if (!selected) return;
+  if (dir !== undefined) filesDir = dir;
+  const id = selected, at = filesDir;
+  try {
+    const v = await api(filesUrl("", at));
+    if (id !== selected || at !== filesDir) return;
+    filesFor = id;
+    renderFiles(v);
+    showFilesError(null);
+  } catch (err) {
+    if (id !== selected) return;
+    if (at && /no such/.test(err.message)) { loadFiles(at.split("/").slice(0, -1).join("/")); return; }
+    showFilesError(err);
+  }
+}
+
+function renderFiles(v) {
+  const parts = filesDir ? filesDir.split("/") : [];
+  const crumbs = [el("a", { href: "#", onclick: (ev) => { ev.preventDefault(); loadFiles(""); } }, "Server folder")];
+  parts.forEach((p, i) => {
+    crumbs.push(el("span", { class: "muted" }, " / "));
+    const to = parts.slice(0, i + 1).join("/");
+    crumbs.push(i === parts.length - 1 ? el("b", {}, p) : el("a", { href: "#", onclick: (ev) => { ev.preventDefault(); loadFiles(to); } }, p));
+  });
+  $("files-crumbs").replaceChildren(...crumbs);
+  const owner = v.owner;
+  const rows = [];
+  if (filesDir) {
+    rows.push(el("li", { class: "file-row" }, el("a", { href: "#", class: "file-name", onclick: (ev) => { ev.preventDefault(); loadFiles(parts.slice(0, -1).join("/")); } },
+      fileIcon(true), ".. (up a folder)")));
+  }
+  for (const e of v.entries) {
+    const p = joinPath(filesDir, e.name);
+    const mayChange = owner || !e.locked;
+    const open = e.dir ? () => loadFiles(p) : e.editable ? () => openFileEditor(p, !mayChange) : null;
+    const name = open
+      ? el("a", { href: "#", class: "file-name", onclick: (ev) => { ev.preventDefault(); open(); } }, fileIcon(e.dir), e.name)
+      : el("span", { class: "file-name" }, fileIcon(false), e.name);
+    const detail = e.dir ? "Folder" : `${fmtSize(e.size)} · ${whenShort(e.modTime)}`;
+    rows.push(el("li", { class: "file-row" },
+      el("span", { class: "who" }, name, el("small", {}, detail + (e.locked && !owner ? " · only the owner can change this" : ""))),
+      e.dir ? null : el("a", { class: "button", href: filesUrl("/download", p), download: e.name }, "Download"),
+      mayChange && (owner || !e.dir) ? btn("Rename", () => renameFile(p, e.name)) : null,
+      mayChange && (owner || !e.dir) ? btn("Delete", () => deleteFile(p, e)) : null));
+  }
+  if (!v.entries.length) rows.push(emptyRow("This folder is empty."));
+  $("files-list").replaceChildren(...rows);
+  $("files-note").textContent = owner ? "" : "Plugins, mods and programs can only be changed by the owner, and only the owner can move or delete folders.";
+}
+
+async function filesCall(fn) {
+  try { await fn(); showFilesError(null); } catch (err) { showFilesError(err); }
+  loadFiles();
+}
+
+function renameFile(p, name) {
+  const to = prompt(`New name for ${name} (use a / to move it into a folder):`, name);
+  if (!to || to === name) return;
+  const target = to.includes("/") ? to.replace(/^\/+/, "") : joinPath(filesDir, to);
+  filesCall(() => post(sid() + "/files/rename", { from: p, to: target }));
+}
+
+function deleteFile(p, e) {
+  if (!confirm(e.dir ? `Delete the folder ${e.name} and everything in it? This can't be undone, except by restoring a backup.` : `Delete ${e.name}? This can't be undone, except by restoring a backup.`)) return;
+  filesCall(() => post(sid() + "/files/delete", { path: p }));
+}
+
+$("files-new-folder").addEventListener("click", () => {
+  const name = prompt("Name of the new folder:");
+  if (name && name.trim()) filesCall(() => post(sid() + "/files/folder", { path: joinPath(filesDir, name.trim()) }));
+});
+
+async function uploadFiles(files) {
+  const id = selected, dir = filesDir;
+  for (const f of files) {
+    try {
+      await upload($("files-drop"), filesUrl("/upload", dir), f, "Saving…");
+    } catch (err) {
+      if (id === selected) showFilesError(err);
+      break;
+    }
+  }
+  if (id === selected) loadFiles();
+}
+$("files-input").addEventListener("change", (ev) => { const fs = [...ev.target.files]; ev.target.value = ""; if (fs.length) uploadFiles(fs); });
+{
+  const box = $("files-drop");
+  box.addEventListener("dragover", (ev) => { ev.preventDefault(); box.classList.add("over"); });
+  box.addEventListener("dragleave", () => box.classList.remove("over"));
+  box.addEventListener("drop", (ev) => { ev.preventDefault(); box.classList.remove("over"); if (ev.dataTransfer.files.length) uploadFiles([...ev.dataTransfer.files]); });
+}
+
+async function openFileEditor(p, readOnly) {
+  if (fileDirty && !confirm("Close the file you're editing without saving?")) return;
+  try {
+    const f = await api(filesUrl("/text", p));
+    fileOpen = { path: f.path, modTime: f.modTime, readOnly };
+    fileDirty = false;
+    $("file-editor-name").textContent = f.path;
+    $("file-text").value = f.text;
+    $("file-text").readOnly = readOnly;
+    $("file-save").hidden = readOnly;
+    const s = serverList.find((x) => x.id === selected);
+    $("file-editor-note").textContent = readOnly ? "Only the owner can change this file."
+      : (s && isLive(s) ? "The server is running: most files are only read when it starts, so restart it after saving. Some (like the world) are rewritten by the server while it runs." : "Changes take effect when the server next starts.");
+    $("file-editor-error").hidden = true;
+    $("file-editor").hidden = false;
+    $("files-card").hidden = true;
+    $("file-text").focus();
+  } catch (err) { showFilesError(err); }
+}
+
+function closeFileEditor(force) {
+  if (!force && fileDirty && !confirm("Close without saving your changes?")) return;
+  fileOpen = null;
+  fileDirty = false;
+  $("file-editor").hidden = true;
+  $("files-card").hidden = false;
+}
+
+$("file-text").addEventListener("input", () => { fileDirty = true; });
+$("file-close").addEventListener("click", () => { closeFileEditor(false); loadFiles(); });
+$("file-save").addEventListener("click", async () => {
+  if (!fileOpen) return;
+  try {
+    const f = await api(sid() + "/files/text", { method: "PUT", body: JSON.stringify({ path: fileOpen.path, text: $("file-text").value, modTime: fileOpen.modTime }) });
+    fileOpen.modTime = f.modTime;
+    fileDirty = false;
+    $("file-editor-error").hidden = true;
+    $("file-editor-note").textContent = "Saved. " + (isLive(serverList.find((x) => x.id === selected) || {}) ? "Restart the server to use the change." : "");
+  } catch (err) {
+    $("file-editor-error").textContent = err.message;
+    $("file-editor-error").hidden = false;
   }
 });
 
@@ -2566,7 +2739,7 @@ async function addonsCall(fn) {
 }
 
 // upload sends a file with progress shown in the drop box.
-function upload(box, url, file) {
+function upload(box, url, file, doneText) {
   return new Promise((resolve, reject) => {
     const bar = box.querySelector(".upload-progress");
     const progress = bar.querySelector("progress");
@@ -2582,7 +2755,7 @@ function upload(box, url, file) {
     xhr.upload.onprogress = (ev) => {
       if (!ev.lengthComputable) return;
       progress.value = Math.round((ev.loaded / ev.total) * 100);
-      label.textContent = ev.loaded >= ev.total ? "Unpacking and installing…" : `Uploading ${file.name}… ${mb1(ev.loaded)} of ${mb1(ev.total)}`;
+      label.textContent = ev.loaded >= ev.total ? (doneText || "Unpacking and installing…") : `Uploading ${file.name}… ${mb1(ev.loaded)} of ${mb1(ev.total)}`;
     };
     const done = () => { bar.hidden = true; box.classList.remove("busy"); };
     xhr.onload = () => {

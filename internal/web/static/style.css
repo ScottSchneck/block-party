@@ -678,3 +678,15 @@ textarea.plain { font: inherit; background: var(--field); color: var(--text); }
 .task-when.row { display: flex; }
 .days { display: flex; flex-wrap: wrap; gap: 6px 14px; }
 #task-ideas { margin-top: 10px; }
+
+/* file manager */
+.files-crumbs { font-size: 14px; word-break: break-all; }
+.files-crumbs a { color: var(--link); text-decoration: none; }
+.files-drop { padding: 10px 14px; margin: 10px 0 4px; }
+.people.files li { padding: 6px 0; }
+.file-name { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; color: var(--text); text-decoration: none; word-break: break-all; }
+a.file-name:hover { color: var(--link); }
+.file-icon { width: 18px; height: 18px; flex: none; fill: none; stroke: var(--muted); stroke-width: 1.6; stroke-linejoin: round; }
+.people.files .who small { padding-left: 26px; }
+.file-text { width: 100%; min-height: 60vh; font-size: 13px; line-height: 1.5; tab-size: 4; white-space: pre; resize: vertical; }
+#file-editor h3 { margin: 0; font-size: 14px; word-break: break-all; }

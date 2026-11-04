@@ -81,6 +81,11 @@ PS5, and the panel runs a family's servers day to day. See the
   after another task. Restarts and stops can warn players first, and any
   task can wait until nobody is playing. Anyone who takes care of a server
   can set them up.
+- **A file manager** for each server (Files tab): browse its folder, open
+  and edit text files (settings, plugin configs), upload, download, rename
+  and delete. Anyone who takes care of a server can use it; only the owner
+  can change plugins, mods and the server's programs, or move or delete
+  whole folders. Nothing outside the server's folder can be reached.
 - **Notifications** to your phone (ntfy), a Discord channel, email, or text
   messages (Twilio), in any combination, each with its own choice of events:
   someone wants to join, a server crashes, a backup fails, and more. See

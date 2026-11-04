@@ -216,6 +216,7 @@ func (s *Server) routes() http.Handler {
 	s.notifyRoutes(mux)
 	s.metricsRoutes(mux)
 	s.taskRoutes(mux)
+	s.fileRoutes(mux)
 	return s.secure(mux)
 }
 
