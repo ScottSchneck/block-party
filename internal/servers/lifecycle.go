@@ -106,6 +106,23 @@ func (m *Manager) DeleteServer(id string) error {
 	s.deleted = true
 	s.state = StateStopped
 	s.mu.Unlock()
+	if meta.Loader == LoaderVelocity {
+		m.lobbyDeleted(meta) // its servers take players themselves again
+	}
+	if meta.Proxy != "" {
+		if l, ok := m.Get(meta.Proxy); ok {
+			l.mu.Lock()
+			kept := l.meta.LobbyServers[:0]
+			for _, b := range l.meta.LobbyServers {
+				if b != id {
+					kept = append(kept, b)
+				}
+			}
+			l.meta.LobbyServers = kept
+			l.mu.Unlock()
+			_ = l.saveMeta()
+		}
+	}
 	m.mu.Lock()
 	delete(m.servers, id)
 	m.mu.Unlock()

@@ -10,6 +10,7 @@ import (
 
 func (s *Server) settingsRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/servers/{id}/settings", s.withServer(levelRun, s.getServerSettings))
+	mux.HandleFunc("POST /api/servers/{id}/lobby", s.withServer(levelOwner, s.setLobby))
 	mux.HandleFunc("POST /api/servers/{id}/settings", s.withServer(levelRun, s.saveServerSettings))
 	mux.HandleFunc("GET /api/servers/{id}/properties", s.withServer(levelRun, s.getProperties))
 	mux.HandleFunc("PUT /api/servers/{id}/properties", s.withServer(levelRun, s.putProperties))
@@ -92,4 +93,21 @@ func (s *Server) renameServer(w http.ResponseWriter, r *http.Request, srv *serve
 		return
 	}
 	writeJSON(w, http.StatusOK, srv.Status())
+}
+
+// setLobby chooses the servers behind a lobby, in order (owner only: it
+// changes how the other servers let players in).
+func (s *Server) setLobby(w http.ResponseWriter, r *http.Request, srv *servers.Server) {
+	var req struct {
+		Servers []string `json:"servers"`
+	}
+	if !readBody(w, r, &req) {
+		return
+	}
+	if err := s.mgr.SetLobbyServers(srv.ID(), req.Servers); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	s.note(r, srv, "chose the servers behind the lobby")
+	s.getServerSettings(w, r, srv)
 }

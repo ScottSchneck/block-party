@@ -52,6 +52,8 @@ type SettingsView struct {
 	Name    string  `json:"name"` // the panel's name for the server
 	Groups  []Group `json:"groups"`
 	Running bool    `json:"running"`
+	// Lobby is a lobby's (Velocity's) servers, instead of Groups.
+	Lobby *LobbyView `json:"lobby,omitempty"`
 }
 
 type fieldDef struct {
@@ -282,6 +284,11 @@ func (s *Server) Settings() (SettingsView, error) {
 	if s.isHytale() {
 		return s.hytaleSettings()
 	}
+	if s.isJava() && s.isVelocity() {
+		st := s.Status()
+		lv := s.m.lobbyView(s)
+		return SettingsView{Name: st.Name, Groups: []Group{}, Running: st.State == StateRunning || st.State == StateStarting, Lobby: &lv}, nil
+	}
 	s.filesMu.Lock()
 	p, err := readProperties(s.propertiesPath())
 	s.filesMu.Unlock()
@@ -326,6 +333,9 @@ type SettingsChange struct {
 func (s *Server) SaveSettings(values map[string]string) ([]SettingsChange, error) {
 	if s.isHytale() {
 		return s.saveHytaleSettings(values)
+	}
+	if s.isJava() && s.isVelocity() {
+		return nil, errors.New("a lobby's settings are its servers (Settings, Servers behind this lobby)")
 	}
 	keys := make([]string, 0, len(values))
 	for k := range values {

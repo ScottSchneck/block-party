@@ -25,6 +25,10 @@ case "$*" in
   *--installServer*) spec=$(cat "$2"); mkdir -p "$(dirname "$spec")"; echo "-cp libraries/x.jar net.example.Main" > "$spec"; echo "The server installed successfully"; exit 0;;
 esac
 echo "[12:00:00 INFO]: args: $*"
+case "$*" in
+  *velocity.jar*) echo "[12:00:00 INFO]: Booting up Velocity 3.4.0-SNAPSHOT"; echo "[12:00:01 INFO]: Done (0.812s)!"
+    while read line; do case "$line" in end) echo "[12:00:09 INFO]: Shutting down the proxy..."; exit 0;; *) echo "[12:00:08 INFO]: got: $line";; esac; done; exit 0;;
+esac
 if [ -f paper.jar ] || { [ ! -f server.jar ] && [ ! -d libraries ]; }; then
   v=$(cut -d' ' -f2 paper.jar 2>/dev/null)
   echo "[12:00:00 INFO]: Starting minecraft server version ${v:-VERSION}"
@@ -144,6 +148,16 @@ func newFakeJavaWorld(t *testing.T) *fakeJavaWorld {
 				return
 			}
 			json.NewEncoder(w).Encode(map[string]string{"id": "0123456789abcdef0123456789abcdef", "name": name})
+		case p == "/velocity":
+			json.NewEncoder(w).Encode(map[string]any{"versions": map[string][]string{"3.0.0": {"3.3.0-SNAPSHOT", "3.4.0-SNAPSHOT"}}})
+		case p == "/velocity/versions/3.4.0-SNAPSHOT/builds":
+			jar := []byte("velocity proxy")
+			json.NewEncoder(w).Encode([]map[string]any{
+				{"id": 510, "channel": "STABLE", "downloads": map[string]any{"server:default": map[string]any{"name": "velocity.jar", "url": f.srv.URL + "/velocityjar", "checksums": map[string]string{"sha256": sha(jar)}}}},
+				{"id": 511, "channel": "BETA", "downloads": map[string]any{"server:default": map[string]any{"name": "velocity.jar", "url": f.srv.URL + "/velocityjar", "checksums": map[string]string{"sha256": sha(jar)}}}},
+			})
+		case p == "/velocityjar":
+			w.Write([]byte("velocity proxy"))
 		case strings.HasPrefix(p, "/geyser/"):
 			// /geyser/<project>/versions/latest/builds/latest, and
 			// /geyser/<project>/versions/<v>/builds/<b>/downloads/spigot
@@ -155,11 +169,12 @@ func newFakeJavaWorld(t *testing.T) *fakeJavaWorld {
 				return
 			}
 			if strings.HasSuffix(p, "/versions/latest/builds/latest") {
+				d := map[string]string{"name": file, "sha256": sha(pluginJar(project, f.geyser, f.geyserB))}
 				json.NewEncoder(w).Encode(map[string]any{"version": f.geyser, "build": f.geyserB,
-					"downloads": map[string]any{"spigot": map[string]string{"name": file, "sha256": sha(pluginJar(project, f.geyser, f.geyserB))}}})
+					"downloads": map[string]any{"spigot": d, "velocity": d}})
 				return
 			}
-			if len(parts) == 7 && parts[6] == "spigot" {
+			if len(parts) == 7 && (parts[6] == "spigot" || parts[6] == "velocity") {
 				b := 0
 				fmt.Sscan(parts[4], &b)
 				f.pluginGet++

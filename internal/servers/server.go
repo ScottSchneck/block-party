@@ -82,10 +82,12 @@ type Status struct {
 	// Java server type ("paper", "fabric"…), its own version, whether it
 	// stays on its Minecraft version, its modpack, and whether consoles can
 	// join this type at all.
-	Loader          string `json:"loader,omitempty"`
-	LoaderVersion   string `json:"loaderVersion,omitempty"`
-	KeepVersion     bool   `json:"keepVersion,omitempty"`
-	Modpack         string `json:"modpack,omitempty"`
+	Loader        string `json:"loader,omitempty"`
+	LoaderVersion string `json:"loaderVersion,omitempty"`
+	KeepVersion   bool   `json:"keepVersion,omitempty"`
+	Modpack       string `json:"modpack,omitempty"`
+	// Proxy is the lobby a Java server is behind (its ID).
+	Proxy           string `json:"proxy,omitempty"`
 	ConsolesAllowed bool   `json:"consolesAllowed,omitempty"`
 }
 
@@ -220,6 +222,7 @@ func (s *Server) Status() Status {
 		}
 		st.Consoles = s.consolesOnLocked()
 		st.Loader, st.KeepVersion, st.Modpack = s.loaderLocked(), s.meta.KeepVersion, s.meta.Modpack
+		st.Proxy = s.meta.Proxy
 		st.ConsolesAllowed = len(s.consoleSetLocked()) > 0
 		if st.Loader != LoaderPaper {
 			st.LoaderVersion = s.meta.LoaderVersion
@@ -407,6 +410,7 @@ func (s *Server) Start() error {
 		return errShuttingDown
 	}
 	s.applyConsoleFileChanges()
+	s.prepareVelocityStart()
 	serr := s.prepareHytaleStart()
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -762,7 +766,11 @@ func (s *Server) stop(user bool) <-chan struct{} {
 			_ = syscall.Kill(-pid, syscall.SIGKILL)
 		}
 	}()
-	s.sendLocked("stop")
+	if s.isJava() && s.loaderLocked() == LoaderVelocity {
+		s.sendLocked("end") // Velocity's stop
+	} else {
+		s.sendLocked("stop")
+	}
 	return exited
 }
 

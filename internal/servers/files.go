@@ -98,10 +98,13 @@ func codeFile(rel string) bool {
 	}
 	parts := strings.Split(rel, "/")
 	switch path.Base(rel) {
-	case "bedrock_server", paperJar, hytaleJar, "run.sh":
+	case "bedrock_server", paperJar, hytaleJar, "run.sh", velocitySecretFile:
 		if len(parts) == 1 {
 			return true
 		}
+	}
+	if rel == paperGlobalFile {
+		return true // a server behind a lobby has the lobby's secret in it
 	}
 	if isCodeName(rel) {
 		return true

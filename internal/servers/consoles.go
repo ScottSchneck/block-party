@@ -92,6 +92,8 @@ func consoleSet(loader string) []consolePlugin {
 		return fabricConsolePlugins
 	case LoaderNeoForge:
 		return neoForgeConsolePlugins
+	case LoaderVelocity:
+		return velocityConsolePlugins
 	}
 	return nil
 }
@@ -657,6 +659,11 @@ func (s *Server) SetConsoles(on bool) error {
 		s.m.work.Done()
 		return errBusy
 	}
+	if s.meta.Proxy != "" && on {
+		s.mu.Unlock()
+		s.m.work.Done()
+		return errors.New("this server is behind a lobby: console players join through the lobby, so turn console players on there")
+	}
 	changed := s.meta.NoConsoles == on
 	s.meta.NoConsoles = !on
 	s.mu.Unlock()
@@ -829,8 +836,8 @@ func (s *Server) consoleChange(name, action string) (pending bool, err error) {
 		return false, err
 	}
 	adding := action == "allow" || action == "op"
-	if adding && !s.ConsolesOn() {
-		return false, errNoConsoles
+	if adding && !s.ConsolesOn() && !s.behindLobby() {
+		return false, errNoConsoles // behind a lobby, consoles come through it
 	}
 	s.dropJavaPending(javaName, action)
 

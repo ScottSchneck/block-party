@@ -338,6 +338,8 @@ func (s *Server) snapshot(ctx context.Context, held *exec.Cmd) (string, error) {
 		var listed map[string]int64
 		if s.isHytale() {
 			err = s.hytaleHoldSave(ctx, held) // saved a moment ago; copy it all
+		} else if s.isJava() && s.isVelocity() {
+			// A lobby has no worlds: nothing to save first.
 		} else if s.isJava() {
 			err = s.javaHoldSave(ctx, held) // everything is saved; copy it all
 		} else {
@@ -420,8 +422,8 @@ func (s *Server) holdSave(ctx context.Context, held *exec.Cmd) (map[string]int64
 // resumeSave lets the server save again. It retries for a few seconds if the
 // command can't be queued, because a server left on hold never saves.
 func (s *Server) resumeSave(held *exec.Cmd) {
-	if s.isHytale() {
-		return // Hytale's saving wasn't paused
+	if s.isHytale() || (s.isJava() && s.isVelocity()) {
+		return // Hytale's saving wasn't paused, and a lobby doesn't save
 	}
 	for i := 0; i < 40; i++ {
 		s.mu.Lock()

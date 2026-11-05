@@ -173,7 +173,7 @@ function renderServerRow(s) {
     el("div", {}, stateEl(s)),
     el("div", { class: "cell-muted" }, playingText(s), s.waiting ? el("div", { class: "note warn" }, `${s.waiting} waiting to be let in`) : null),
     el("div", {},
-      el("div", { class: "mono" }, s.type === "java" ? (s.version ? "Java " + s.version : "Java") : s.type === "hytale" ? (s.version ? "Hytale " + s.version : "Hytale") : (s.version || word("noVersion"))),
+      el("div", { class: "mono" }, s.type === "java" ? ((s.loader === "velocity" ? "Velocity" : "Java") + (s.version ? " " + s.version : "")) : s.type === "hytale" ? (s.version ? "Hytale " + s.version : "Hytale") : (s.version || word("noVersion"))),
       upd && access(s) >= CARE ? el("div", { class: "note upd" + (upd.far ? " far" : "") }, upd.far ? "Well behind: update" : "Update ready") : null),
     el("div", { class: "cell-muted" }, whenShort(s.lastBackup)),
     el("div", { class: "acts" },
@@ -315,7 +315,7 @@ function renderDetailHead(s) {
   $("detail-facts").replaceChildren(stateEl(s),
     s.type === "hytale" ? el("span", {}, "Hytale ", el("span", { class: "mono" }, s.version || "…"))
     : s.type === "java"
-      ? el("span", {}, "Java ", el("span", { class: "mono" }, s.version || "…"), javaTypeNote(s),
+      ? el("span", {}, s.loader === "velocity" ? "Velocity " : "Java ", el("span", { class: "mono" }, s.version || "…"), javaTypeNote(s),
         s.consolesWaiting
           ? el("span", { class: "warn", title: `Geyser doesn't support Minecraft ${s.consolesWaiting} yet; consoles can join once a newer Geyser is out` }, " · consoles after a Geyser update")
           : s.consoles ? el("span", { class: "muted", title: s.consolesLive ? "Consoles, phones and tablets can join now" : "Consoles can join while it's running with console support" }, " · consoles too") : null)
@@ -332,6 +332,7 @@ function renderDetailHead(s) {
     el("button", { onclick: action(s.id, "restart"), disabled: !isLive(s) || busy }, "Restart"),
     access(s) >= CARE ? updBtn : null].filter(Boolean));
   for (const t of ["players", "settings", "addons", "backups"]) $("tab-" + t).hidden = copying;
+  if (s.loader === "velocity") $("tab-players").hidden = true; // a lobby: the servers behind it have the players
   $("tab-addons").hidden = copying || (s.type && s.type !== "bedrock"); // Bedrock add-ons
   $("tab-plugins").hidden = copying || !runsJars(s) || access(s) < CARE; // Paper and Purpur plugins, or mods
   $("tab-plugins").textContent = runsModsJS(s) ? "Mods" : "Plugins";
@@ -340,7 +341,7 @@ function renderDetailHead(s) {
   $("ov-backups-link").textContent = access(s) >= CARE ? "Restore or download" : "See backups";
 }
 
-const loaderLabel = { paper: "Paper", purpur: "Purpur", vanilla: "Vanilla", fabric: "Fabric", forge: "Forge", neoforge: "NeoForge" };
+const loaderLabel = { paper: "Paper", purpur: "Purpur", vanilla: "Vanilla", fabric: "Fabric", forge: "Forge", neoforge: "NeoForge", velocity: "Velocity" };
 // javaTypeNote says what runs a Java server: " · Paper build 120", " · Fabric 0.16.9".
 function javaTypeNote(s) {
   const l = s.loader || "paper";
@@ -348,6 +349,7 @@ function javaTypeNote(s) {
   if (s.modpack) text = ` · ${s.modpack} (${loaderLabel[l]})`;
   else if (l === "paper") text = s.build ? ` · Paper build ${s.build}` : "";
   else if (l === "vanilla") text = " · Vanilla";
+  else if (l === "velocity") text = " · Lobby";
   else text = ` · ${loaderLabel[l]}${s.loaderVersion ? " " + s.loaderVersion : ""}`;
   return text ? el("span", { class: "muted", title: s.keepVersion ? `Stays on Minecraft ${s.version}: Update gets newer builds of it` : "" }, text) : null;
 }
@@ -465,6 +467,7 @@ function route() {
     let tabOK = !(s && s.state === "importing" && ["players", "settings", "addons", "plugins", "backups", "tasks", "files"].includes(t));
     if (s && (t === "tasks" || t === "files") && access(s) < CARE) tabOK = false;
     if (s && t === "plugins" && (!runsJars(s) || access(s) < CARE)) tabOK = false;
+    if (s && t === "players" && s.loader === "velocity") tabOK = false;
     if (s && t === "addons" && s.type && s.type !== "bedrock") tabOK = false;
     acceptedHash = location.hash;
     setView("server");
@@ -1107,9 +1110,44 @@ function control(f) {
   }
 }
 
+// renderLobby shows a lobby's servers (Settings tab).
+function renderLobby(v) {
+  $("lobby-card").hidden = !v.lobby;
+  $("raw-box").hidden = !!v.lobby;
+  if (!v.lobby) return;
+  const owner = me.owner;
+  const chosen = new Set(v.lobby.servers.filter((x) => x.linked).map((x) => x.id));
+  let first = (v.lobby.servers.find((x) => x.linked) || {}).id || "";
+  const redraw = () => {
+    const linked = v.lobby.servers.filter((x) => chosen.has(x.id));
+    if (!chosen.has(first)) first = linked.length ? linked[0].id : "";
+    $("lobby-first").replaceChildren(...linked.map((x) => el("option", { value: x.id, selected: x.id === first }, x.name)));
+    $("lobby-actions").hidden = !owner;
+    $("lobby-first").disabled = !linked.length;
+  };
+  $("lobby-list").replaceChildren(...(v.lobby.servers.length ? v.lobby.servers.map((x) => {
+    const box = el("input", { type: "checkbox", checked: chosen.has(x.id), disabled: !owner || !!x.why,
+      onchange: (e) => { if (e.target.checked) chosen.add(x.id); else chosen.delete(x.id); redraw(); } });
+    return el("li", {}, el("label", { class: "check" }, box,
+      el("span", { class: "who" }, el("span", {}, x.name), el("small", {}, x.why || `port ${x.port}` + (x.linked ? " · behind this lobby" : "")))));
+  }) : [emptyRow("No Java servers yet. Add Paper or Purpur servers, then link them here.")]));
+  $("lobby-first").onchange = (e) => { first = e.target.value; };
+  $("lobby-save").onclick = async () => {
+    const order = [first, ...v.lobby.servers.filter((x) => chosen.has(x.id) && x.id !== first).map((x) => x.id)].filter(Boolean);
+    $("lobby-error").hidden = true;
+    try {
+      settingsView = await post(sid() + "/lobby", { servers: order });
+      renderLobby(settingsView);
+      refresh();
+    } catch (err) { $("lobby-error").textContent = err.message; $("lobby-error").hidden = false; }
+  };
+  redraw();
+}
+
 function renderSettings() {
   const v = settingsView;
   if (!v) return;
+  renderLobby(v);
   const srv = serverList.find((x) => x.id === selected);
   const hytale = !!srv && srv.type === "hytale";
   $("raw-file").textContent = hytale ? "config.json" : "server.properties";
@@ -2252,7 +2290,7 @@ $("offsite-copies-load").addEventListener("click", loadOffsiteCopies);
 
 function renderHold() {
   const s = serverList.find((x) => x.id === selected);
-  $("hold-card").hidden = access(s) < CARE;
+  $("hold-card").hidden = access(s) < CARE || (!!s && s.loader === "velocity"); // a lobby just takes the newest Velocity
   if (!s) return;
   $("hold-version").checked = !!s.holdVersion;
   const game = s.type === "java" ? "Minecraft Java" : s.type === "hytale" ? "Hytale" : "Bedrock";
@@ -2569,6 +2607,7 @@ const loaderHelp = {
   fabric: "For Fabric mods, found and installed in the Mods tab. Consoles can join too, through Geyser for Fabric.",
   forge: "For Forge mods, found and installed in the Mods tab. Consoles can't join Forge servers.",
   neoforge: "For NeoForge mods, found and installed in the Mods tab. Consoles can join too, through Geyser for NeoForge.",
+  velocity: "A lobby in front of your Paper and Purpur servers (Velocity, PaperMC's proxy): friends join one address and move between the servers with /server, without leaving the game. Choose its servers in its Settings tab once it's added. Consoles can join through it too.",
   modpack: "A whole pack of mods from Modrinth: the panel installs the Minecraft version, mod loader and mods it needs. Packs made for Fabric, Forge and NeoForge work. Give it at least 4 GB of memory.",
 };
 const versionLists = {};
@@ -2578,8 +2617,10 @@ async function showLoader() {
   const loader = $("add-loader").value;
   const pack = loader === "modpack";
   $("add-type-help").textContent = loaderHelp[loader] || "";
-  $("add-version-label").hidden = pack;
+  $("add-version-label").hidden = pack || loader === "velocity";
+  $("add-owner-label").hidden = loader === "velocity"; // the servers behind it have the allowlists
   $("add-modpack").hidden = !pack;
+  if (loader === "velocity") return;
   const mem = $("add-memory");
   if ((pack || ["fabric", "forge", "neoforge"].includes(loader)) && Number(mem.value) < 4096) mem.value = "4096";
   if (pack) { if (!$("modpack-results").children.length) searchModpacks(""); return; }
@@ -2700,7 +2741,11 @@ function renderConsoles() {
   const box = $("consoles-on");
   if (document.activeElement !== box) box.checked = !!s.consoles;
   $("consoles-on-label").textContent = s.consoles ? "On" : "Off";
-  $("consoles-help").textContent = !s.consoles
+  const lobby = s.proxy && serverList.find((x) => x.id === s.proxy);
+  box.disabled = !!s.proxy;
+  $("consoles-help").textContent = s.proxy
+    ? `This server is behind the lobby ${lobby ? lobby.name : s.proxy}: everyone, consoles too, joins through the lobby. Its console players are set there.`
+    : !s.consoles
     ? "Off: only Minecraft Java Edition (PC and Mac) can join."
     : s.consolesWaiting
       ? `Geyser, which lets consoles join, doesn't support Minecraft ${s.consolesWaiting} yet, so Xbox, PlayStation, Switch, phones and tablets can't join this server until it does. That's usually a few weeks after a new Minecraft version. The panel installs the new Geyser overnight (or press Update) as soon as it's out.`

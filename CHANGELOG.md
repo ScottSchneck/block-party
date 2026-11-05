@@ -25,6 +25,13 @@
   NeoForge. NeoForge servers made before get console support at their next
   Update (turn it off under Settings → Console players if you'd rather
   not). Forge still can't: Geyser doesn't run on it.
+- **Lobbies.** A new Java server type, Lobby (Velocity), puts one address
+  in front of several Paper and Purpur servers: friends land on the first
+  and move between them with `/server`. Pick its servers on its Settings
+  tab. The panel sets up both sides (the lobby's forwarding secret, and
+  each server's Velocity support with its account checks left to the
+  lobby), and console players join through the lobby with Geyser for
+  Velocity.
 
 ## 1.6.1
 

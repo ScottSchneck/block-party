@@ -183,6 +183,15 @@ type Meta struct {
 	// CurseForgePacks are the Bedrock packs installed from CurseForge, by
 	// pack ID, so the Add-ons tab can offer their updates.
 	CurseForgePacks map[string]CFPackRecord `json:"curseForgePacks,omitempty"`
+	// LobbyServers are the servers behind a lobby (Velocity), in order:
+	// players land on the first. Proxy is the lobby a server is behind,
+	// with its forwarding secret; ProxyNoConsoles and ProxyOnline are its
+	// console setting and online-mode from before, put back when it leaves.
+	LobbyServers    []string `json:"lobbyServers,omitempty"`
+	Proxy           string   `json:"proxy,omitempty"`
+	ProxySecret     string   `json:"proxySecret,omitempty"`
+	ProxyNoConsoles bool     `json:"proxyNoConsoles,omitempty"`
+	ProxyOnline     string   `json:"proxyOnline,omitempty"`
 }
 
 // The name is from before the panel was called Block Party; it stays so
@@ -489,6 +498,9 @@ func (m *Manager) CreateJavaOf(name string, memoryMB int, c JavaChoice, names ..
 		return Status{}, errors.New("unknown server type")
 	}
 	c.Version = strings.TrimSpace(c.Version)
+	if c.Loader == LoaderVelocity {
+		c.Version, names = "", nil // always the newest Velocity; no allowlist (the servers behind it have theirs)
+	}
 	if c.Version != "" && !plainVersion.MatchString(c.Version) {
 		return Status{}, errors.New("that isn't a Minecraft version")
 	}

@@ -487,6 +487,31 @@ for them.
   it's waiting for Geyser, and consoles can join again after the next
   Geyser update.
 
+#### Lobbies (Velocity)
+
+A **lobby** (Add server → Java → Lobby) puts one address in front of
+several Paper or Purpur servers, using [Velocity](https://papermc.io/software/velocity),
+PaperMC's proxy. Friends join the lobby and land on its first server; in the
+game, `/server` lists the others and `/server <name>` moves them there
+without leaving. Choose the servers, and which one players land on, on the
+lobby's **Settings** tab (owner only), then restart the lobby and those
+servers.
+
+- The lobby checks accounts and passes each player on with a signed note,
+  so the servers behind it turn their own account checks off and refuse
+  anyone who doesn't come through the lobby. Their allowlists, operators
+  and Players tabs work as before.
+- Console players join the lobby too: it gets Geyser and Floodgate for
+  Velocity. The servers behind it have their own console support turned off
+  while they're linked. ViaVersion on those servers still helps when they're
+  on an older Minecraft than Geyser speaks.
+- Taking a server out of the lobby, or deleting the lobby, puts its account
+  checks and console setting back (Update reinstalls its console support).
+- For friends outside the house, open the lobby's port; the servers behind
+  it don't need theirs open.
+- The panel writes `velocity.toml` each time the lobby starts, so changes
+  made to it by hand don't last.
+
 ### Hytale servers
 
 **Add server → Hytale** sets up a Hytale dedicated server. Hytale's server

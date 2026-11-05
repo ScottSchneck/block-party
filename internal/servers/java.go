@@ -575,6 +575,9 @@ var javaProperties = []string{
 
 // applyJavaProperties sets what the panel manages. Caller holds s.mu.
 func (s *Server) applyJavaProperties(fresh bool) error {
+	if s.loaderLocked() == LoaderVelocity {
+		return nil // a lobby has velocity.toml (written as it starts)
+	}
 	path := s.propertiesPath()
 	p, err := readProperties(path)
 	if errors.Is(err, os.ErrNotExist) {
@@ -599,6 +602,9 @@ func (s *Server) applyJavaProperties(fresh bool) error {
 	if s.consolesOnLocked() {
 		// Query is UDP on the same port, which Geyser needs for consoles.
 		p.set("enable-query", "false")
+	}
+	if err := s.applyProxyLocked(p); err != nil {
+		return fmt.Errorf("couldn't set it up for its lobby: %w", err)
 	}
 	if strings.Join(p.lines, "\n") == before {
 		return nil

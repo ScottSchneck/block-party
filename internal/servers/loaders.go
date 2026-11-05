@@ -41,11 +41,12 @@ const (
 )
 
 // JavaLoaders are the server types, in the order the page offers them.
-var JavaLoaders = []string{LoaderPaper, LoaderPurpur, LoaderVanilla, LoaderFabric, LoaderForge, LoaderNeoForge}
+var JavaLoaders = []string{LoaderPaper, LoaderPurpur, LoaderVanilla, LoaderFabric, LoaderForge, LoaderNeoForge, LoaderVelocity}
 
 var loaderNames = map[string]string{
 	LoaderPaper: "Paper", LoaderPurpur: "Purpur", LoaderVanilla: "Vanilla",
 	LoaderFabric: "Fabric", LoaderForge: "Forge", LoaderNeoForge: "NeoForge",
+	LoaderVelocity: "Velocity",
 }
 
 // LoaderName is a server type's name ("Fabric").
@@ -165,9 +166,16 @@ func (m *Manager) JavaVersions(ctx context.Context, loader string) ([]string, er
 		if vs, err = m.neoForgeVersions(ctx); err == nil {
 			list = neoForgeMCVersions(vs)
 		}
+	case LoaderVelocity:
+		if list, err = m.velocityVersions(ctx); err == nil && len(list) > 1 {
+			list = list[:1] // a lobby is always on the newest Velocity
+		}
 	}
 	if err != nil {
 		return nil, err
+	}
+	if loader == LoaderVelocity {
+		return list, nil // its own versions, already in order
 	}
 	if len(list) == 0 {
 		return nil, fmt.Errorf("%s didn't list any Minecraft versions", LoaderName(loader))
@@ -618,6 +626,20 @@ func (s *Server) installLoader(ctx context.Context, update bool) error {
 			launch = l
 			return err
 		}
+	case LoaderVelocity:
+		r, err := s.m.velocityRelease(ctx)
+		if err != nil {
+			return err
+		}
+		mc, build, major = r.Version, strconv.Itoa(r.Build), 21
+		if installed && mc == current && build == loaderVersion {
+			break
+		}
+		install = func() error {
+			s.say("Installing Velocity " + mc + " (build " + build + "), PaperMC's proxy for lobbies.")
+			return s.fetchInto(ctx, pluginRelease{Version: mc, URL: r.URL, SHA256: r.SHA256}, velocityJar)
+		}
+		launch = velocityJar
 	case LoaderNeoForge:
 		versions, err := s.m.neoForgeVersions(ctx)
 		if err != nil {
@@ -660,7 +682,7 @@ func (s *Server) installLoader(ctx context.Context, update bool) error {
 		return fmt.Errorf("unknown server type %q", loader)
 	}
 
-	if !update && keep {
+	if !update && keep && loader != LoaderVelocity {
 		s.consolesForVersion(ctx, mc)
 	}
 	if major == 0 {
@@ -707,7 +729,11 @@ func (s *Server) installLoader(ctx context.Context, update bool) error {
 		return fmt.Errorf("couldn't set up server.properties: %w", err)
 	}
 	_ = os.Remove(s.incompleteMarker())
-	s.say(fmt.Sprintf("%s %s for Minecraft %s is installed.", LoaderName(loader), shortBuild(build), mc))
+	if loader == LoaderVelocity {
+		s.say(fmt.Sprintf("Velocity %s (build %s) is installed.", mc, build))
+	} else {
+		s.say(fmt.Sprintf("%s %s for Minecraft %s is installed.", LoaderName(loader), shortBuild(build), mc))
+	}
 	return s.installConsoles(ctx, false)
 }
 
@@ -921,6 +947,8 @@ func (s *Server) loaderArgs() []string {
 	switch s.loaderLocked() {
 	case LoaderPaper, LoaderPurpur:
 		return []string{"-jar", paperJar, "--nogui", "--world-container", "worlds"}
+	case LoaderVelocity:
+		return []string{"-jar", velocityJar}
 	}
 	var args []string
 	if strings.HasPrefix(launch, "@") {

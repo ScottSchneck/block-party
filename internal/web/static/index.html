@@ -182,6 +182,7 @@
               <option value="fabric">Fabric: for mods</option>
               <option value="forge">Forge: for mods</option>
               <option value="neoforge">NeoForge: for mods</option>
+              <option value="velocity">Lobby (Velocity): one address for several servers</option>
               <option value="modpack" id="add-loader-modpack">A modpack from Modrinth</option>
             </select>
           </label>
@@ -964,6 +965,16 @@
             </select>
             <span class="muted small">How much memory this Java server may use. Applies at the next start. Make sure Unraid has it free.</span>
           </div>
+        </section>
+        <section class="card" id="lobby-card" hidden>
+          <h3>Servers behind this lobby</h3>
+          <p class="muted small">Players join the lobby's address and land on the first server; in the game, <span class="mono">/server</span> lists the others and <span class="mono">/server name</span> moves them there. Only Paper and Purpur servers can sit behind a lobby. Their account checks are done by the lobby, and they only let players in through it. Console players join the lobby too, if its console players are on. Restart the lobby and the servers after a change.</p>
+          <ul id="lobby-list" class="people"></ul>
+          <div class="row" id="lobby-actions" hidden>
+            <label>Players land on <select id="lobby-first" aria-label="Players land on"></select></label>
+            <button type="button" id="lobby-save" class="primary">Save</button>
+          </div>
+          <p id="lobby-error" class="error" hidden></p>
         </section>
         <section class="card" id="consoles-card" data-care hidden>
           <div class="row between">

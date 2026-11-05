@@ -369,11 +369,17 @@ var (
 	reJavaHadOp      = regexp.MustCompile(javaPrefix + javaSystemChat + `Nothing changed\. The player already is an operator`)
 	reJavaNoSuchUser = regexp.MustCompile(javaPrefix + javaSystemChat + `That player does not exist`)
 	reJavaServer     = regexp.MustCompile(javaPrefix)
-	javaSaveLines    = []string{"Automatic saving is now disabled", "Saving the game (this may take a moment!)", "Saved the game", "Automatic saving is now enabled", "Saving is already turned"}
+	// Velocity (a lobby) says "Done (1.23s)!" when it's ready.
+	reVelocityDone = regexp.MustCompile(javaPrefix + `Done \([0-9.,]+s\)!\s*$`)
+	javaSaveLines  = []string{"Automatic saving is now disabled", "Saving the game (this may take a moment!)", "Saved the game", "Automatic saving is now enabled", "Saving is already turned"}
 )
 
 // onJavaLineLocked handles a line from a Java server. Caller holds s.mu.
 func (s *Server) onJavaLineLocked(line string) {
+	if s.loaderLocked() == LoaderVelocity {
+		s.onVelocityLineLocked(line)
+		return
+	}
 	switch {
 	case reJavaDone.MatchString(line):
 		if s.state == StateStarting {
@@ -503,7 +509,8 @@ func decodeJSON(resp *http.Response, v any) error {
 
 // javaPlayerFiles are a Java server's player lists and plugin settings,
 // kept in backups next to server.properties.
-var javaSettingsFiles = []string{"ops.json", "banned-players.json", "banned-ips.json", "eula.txt", "bukkit.yml", "spigot.yml", "commands.yml", "help.yml", "permissions.yml"}
+var javaSettingsFiles = []string{"ops.json", "banned-players.json", "banned-ips.json", "eula.txt", "bukkit.yml", "spigot.yml", "commands.yml", "help.yml", "permissions.yml",
+	velocityConfigFile, velocitySecretFile} // a lobby's
 
 // javaSettingsDirs are folders of settings kept in backups.
 var javaSettingsDirs = []string{"config", "plugins", "mods", "defaultconfigs"}
