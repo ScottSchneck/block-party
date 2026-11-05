@@ -82,6 +82,14 @@ func sendNtfy(ctx context.Context, c Ntfy, e Event) error {
 
 // ---- Discord ----
 
+// discordColors mark each kind of event in Discord (the stripe beside the
+// message): red for trouble, amber for someone at the door, green for
+// players, blue for updates.
+var discordColors = map[string]int{
+	Crash: 0xd83c3e, BackupFailed: 0xd83c3e, JoinAttempt: 0xe8a33d, PlayerJoined: 0x3ba55d,
+	Updated: 0x4f7cff, UpdatesOut: 0x4f7cff, NewVersion: 0x4f7cff, PanelStarted: 0x8a8f98,
+}
+
 func sendDiscord(ctx context.Context, c Discord, e Event) error {
 	content := "**" + e.Title + "**"
 	if e.Text != "" && e.Text != e.Title {
@@ -90,10 +98,33 @@ func sendDiscord(ctx context.Context, c Discord, e Event) error {
 	if len(content) > 1900 {
 		content = content[:1900] + "…"
 	}
-	body, _ := json.Marshal(map[string]any{
+	msg := map[string]any{
 		"username": "Block Party", "content": content,
 		"allowed_mentions": map[string]any{"parse": []string{}}, // never ping @everyone
-	})
+	}
+	if color, ok := discordColors[e.Kind]; ok {
+		// A coloured card: the title in bold, the text under it.
+		desc := e.Text
+		if desc == e.Title {
+			desc = ""
+		}
+		if len(desc) > 1900 {
+			desc = desc[:1900] + "…"
+		}
+		title := e.Title
+		if len(title) > 250 {
+			title = title[:250] + "…"
+		}
+		embed := map[string]any{"title": title, "color": color}
+		if desc != "" {
+			embed["description"] = desc
+		}
+		if e.Server != "" {
+			embed["footer"] = map[string]string{"text": e.Server}
+		}
+		msg["content"], msg["embeds"] = "", []any{embed}
+	}
+	body, _ := json.Marshal(msg)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.Webhook, bytes.NewReader(body))
 	if err != nil {
 		return err

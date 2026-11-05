@@ -194,6 +194,7 @@ func main() {
 	mgr.RunPlayTime()
 	mgr.RunMetrics()
 	mgr.RunTasks()
+	mgr.RunUpdateNotes()
 	mgr.RunHytaleKeepAlive()
 
 	cfg.OutsideInfo = func() serverlist.Outside {

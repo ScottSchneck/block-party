@@ -32,6 +32,13 @@
   each server's Velocity support with its account checks left to the
   lobby), and console players join through the lobby with Geyser for
   Velocity.
+- **"Updates are out" notifications.** Once a day the panel checks each
+  server's plugins, mods, add-ons from CurseForge and modpack for new
+  versions, and sends one notification per server about the ones it
+  hasn't mentioned yet (turn it on for any channel under Settings →
+  Notifications). Discord messages are now coloured cards, red for crashes
+  and failed backups, amber for join requests, green for players, blue for
+  updates.
 
 ## 1.6.1
 

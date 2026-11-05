@@ -550,7 +550,9 @@ Under **Settings → Notifications** (owner only), turn on any of:
   panel shows (it makes up one that's hard to guess). Works with ntfy.sh or
   your own ntfy server (with an access token if it's private).
 - **Discord.** Paste a channel's webhook link (channel settings,
-  Integrations, Webhooks). Messages never ping anyone.
+  Integrations, Webhooks). Messages come as cards coloured by kind (red for
+  crashes and failed backups, amber for someone at the door, green for
+  players, blue for updates) and never ping anyone.
 - **Email.** Any SMTP server, on port 587 (STARTTLS) or 465 (TLS). For
   Gmail use smtp.gmail.com with an app password. A password is never sent
   over an unencrypted connection.
@@ -563,7 +565,9 @@ Under **Settings → Notifications** (owner only), turn on any of:
 Each one has its own list of what to tell you about: someone not on the
 allowlist tries to join, a server crashes, a scheduled backup fails, an
 overnight update finishes or fails, a new Bedrock version is out (when
-overnight updates are off), someone starts playing, or the panel starts.
+overnight updates are off), updates are out for a server's plugins, mods,
+add-ons from CurseForge or modpack (checked once a day; each update is
+mentioned once), someone starts playing, or the panel starts.
 The same thing isn't repeated within half an hour. **Send a test** checks a
 channel. Passwords and tokens are kept in `/data/notify.json`, readable only
 by the panel, and never shown in the page again.

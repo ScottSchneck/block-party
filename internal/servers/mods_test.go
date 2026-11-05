@@ -4,8 +4,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/ScottSchneck/block-party/internal/notify"
 )
 
 func TestModMeta(t *testing.T) {
@@ -46,7 +49,10 @@ func TestMods(t *testing.T) {
 	cf := newFakeCurseForge(t)
 	allowFakeCurseForge(t, cf)
 	u := f.srv.URL
+	var mu sync.Mutex
+	var sent []notify.Event
 	m := New(Options{DataDir: t.TempDir(), StopTimeout: time.Second,
+		Notify:   func(e notify.Event) { mu.Lock(); sent = append(sent, e); mu.Unlock() },
 		PaperAPI: java.srv.URL + "/paper", AdoptiumAPI: java.srv.URL + "/adoptium", MojangVersions: u + "/manifest", MojangProfiles: java.srv.URL + "/profiles/",
 		GeyserAPI: u + "/geyser", HangarAPI: java.srv.URL + "/hangar", XboxLookup: java.srv.URL + "/xbox/", ModrinthAPI: u + "/modrinth",
 		PurpurAPI: u + "/purpur", FabricMeta: u + "/fabric", ForgePromos: u + "/forge/promos.json", ForgeMaven: u + "/forgemaven", NeoForgeMaven: u + "/neo",
@@ -105,6 +111,23 @@ func TestMods(t *testing.T) {
 	f.mu.Unlock()
 	if u := s.PluginUpdates(t.Context()); u["storage-1.0.jar"] != "1.1" {
 		t.Fatalf("updates: %v", u)
+	}
+	// The daily note: once, until there's something new.
+	updateNotes := func() []notify.Event {
+		mu.Lock()
+		defer mu.Unlock()
+		var out []notify.Event
+		for _, e := range sent {
+			if e.Kind == notify.UpdatesOut {
+				out = append(out, e)
+			}
+		}
+		return out
+	}
+	s.noteUpdates(t.Context())
+	s.noteUpdates(t.Context())
+	if n := updateNotes(); len(n) != 1 || n[0].Title != "Updates for Modded" || !strings.Contains(n[0].Text, "Storage Drawers 1.1") || !strings.Contains(n[0].Text, "Mods tab") {
+		t.Fatalf("update notes: %+v", n)
 	}
 	if v, err := s.UpdatePlugin("storage-1.0.jar"); err != nil || v != "1.1" {
 		t.Fatalf("update: %q %v", v, err)

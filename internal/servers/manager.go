@@ -187,6 +187,9 @@ type Meta struct {
 	// players land on the first. Proxy is the lobby a server is behind,
 	// with its forwarding secret; ProxyNoConsoles and ProxyOnline are its
 	// console setting and online-mode from before, put back when it leaves.
+	// UpdatesNoted are the updates for its plugins, mods, add-ons and
+	// modpack the owner has been told about.
+	UpdatesNoted    []string `json:"updatesNoted,omitempty"`
 	LobbyServers    []string `json:"lobbyServers,omitempty"`
 	Proxy           string   `json:"proxy,omitempty"`
 	ProxySecret     string   `json:"proxySecret,omitempty"`

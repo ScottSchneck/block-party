@@ -35,6 +35,7 @@ const (
 	Updated      = "updated"      // an overnight update finished (or failed)
 	NewVersion   = "newVersion"   // a new Bedrock version is out
 	PanelStarted = "panelStarted" // the panel (container) started
+	UpdatesOut   = "updatesOut"   // new versions of a server's plugins, mods, add-ons or modpack
 )
 
 // EventInfo describes a kind of event for the settings page.
@@ -51,6 +52,7 @@ var Events = []EventInfo{
 	{BackupFailed, "A scheduled backup fails", true},
 	{Updated, "An overnight update finishes or fails", true},
 	{NewVersion, "A new Bedrock version is out (when overnight updates are off)", false},
+	{UpdatesOut, "Updates are out for a server's plugins, mods, add-ons or modpack (checked once a day)", false},
 	{PlayerJoined, "Someone starts playing", false},
 	{PanelStarted, "The panel starts (after the container or Unraid restarts)", false},
 }

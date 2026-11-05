@@ -148,9 +148,18 @@ func TestSenders(t *testing.T) {
 	if err := sendDiscord(ctx, Discord{Webhook: srv.URL + "/api/webhooks/1/x"}, e); err != nil {
 		t.Fatal(err)
 	}
-	var d map[string]any
+	var d struct {
+		Content  string `json:"content"`
+		Mentions any    `json:"allowed_mentions"`
+		Embeds   []struct {
+			Title, Description string
+			Color              int
+			Footer             struct{ Text string }
+		} `json:"embeds"`
+	}
 	json.Unmarshal([]byte(bodies[1]), &d)
-	if !strings.Contains(d["content"].(string), "**Ava’s Server crashed**") || d["allowed_mentions"] == nil {
+	if d.Content != "" || d.Mentions == nil || len(d.Embeds) != 1 || d.Embeds[0].Title != "Ava’s Server crashed" ||
+		d.Embeds[0].Description != "It stopped unexpectedly." || d.Embeds[0].Color != 0xd83c3e || d.Embeds[0].Footer.Text != e.Server {
 		t.Errorf("discord: %s", bodies[1])
 	}
 
