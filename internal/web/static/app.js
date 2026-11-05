@@ -2568,7 +2568,7 @@ const loaderHelp = {
   vanilla: "Mojang's own server, nothing added. Consoles can't join it.",
   fabric: "For Fabric mods, found and installed in the Mods tab. Consoles can join too, through Geyser for Fabric.",
   forge: "For Forge mods, found and installed in the Mods tab. Consoles can't join Forge servers.",
-  neoforge: "For NeoForge mods, found and installed in the Mods tab. Consoles can't join.",
+  neoforge: "For NeoForge mods, found and installed in the Mods tab. Consoles can join too, through Geyser for NeoForge.",
   modpack: "A whole pack of mods from Modrinth: the panel installs the Minecraft version, mod loader and mods it needs. Packs made for Fabric, Forge and NeoForge work. Give it at least 4 GB of memory.",
 };
 const versionLists = {};

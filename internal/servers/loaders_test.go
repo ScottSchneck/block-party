@@ -103,7 +103,7 @@ func modJar(loader, id, name, version string, needs ...string) []byte {
 func hexOf(sum []byte) string { return hex.EncodeToString(sum) }
 
 func newFakeLoaders(t *testing.T) *fakeLoaders {
-	f := &fakeLoaders{fabricLoad: "0.16.9", purpurB: "2400", geyserFor: []string{"1.21.4"}, packs: map[string][]byte{}}
+	f := &fakeLoaders{fabricLoad: "0.16.9", purpurB: "2400", geyserFor: []string{"1.21.4", "1.21.1"}, packs: map[string][]byte{}}
 	vanilla := func(v string) []byte { return []byte("vanilla server " + v) }
 	f.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
@@ -167,9 +167,13 @@ func newFakeLoaders(t *testing.T) *fakeLoaders {
 		case p == "/geyser/geyser/versions/latest/builds/latest":
 			jar := []byte("geyser fabric")
 			sum := sha256Of(jar)
-			enc.Encode(map[string]any{"version": "2.11.3", "build": 50, "downloads": map[string]any{"fabric": map[string]string{"name": "Geyser-Fabric.jar", "sha256": sum}}})
+			neo := sha256Of([]byte("geyser neoforge"))
+			enc.Encode(map[string]any{"version": "2.11.3", "build": 50, "downloads": map[string]any{"fabric": map[string]string{"name": "Geyser-Fabric.jar", "sha256": sum},
+				"neoforge": map[string]string{"name": "Geyser-NeoForge.jar", "sha256": neo}}})
 		case p == "/geyser/geyser/versions/2.11.3/builds/50/downloads/fabric":
 			w.Write([]byte("geyser fabric"))
+		case p == "/geyser/geyser/versions/2.11.3/builds/50/downloads/neoforge":
+			w.Write([]byte("geyser neoforge"))
 		case strings.HasPrefix(p, "/modrinth/project/pack") && strings.HasSuffix(p, "/version"):
 			id := strings.TrimSuffix(strings.TrimPrefix(p, "/modrinth/project/"), "/version")
 			pack := f.packs[id]
@@ -218,7 +222,7 @@ func newFakeLoaders(t *testing.T) *fakeLoaders {
 			enc.Encode(map[string]string{"id": id, "slug": id, "title": f.mods[id].title})
 		case strings.HasPrefix(p, "/modrinth/project/") && strings.HasSuffix(p, "/version"):
 			id := strings.TrimSuffix(strings.TrimPrefix(p, "/modrinth/project/"), "/version")
-			if r.URL.Query().Get("loaders") != `["fabric"]` {
+			if l := r.URL.Query().Get("loaders"); l != `["fabric"]` && l != `["neoforge"]` {
 				enc.Encode([]any{})
 				return
 			}
@@ -292,7 +296,7 @@ func TestJavaServerTypes(t *testing.T) {
 		{JavaChoice{LoaderPurpur, ""}, "1.21.4", "paper.jar", "-jar paper.jar --nogui --world-container worlds", true, false, "2400"},
 		{JavaChoice{LoaderFabric, ""}, "1.21.4", "fabric-server-launch.jar", "-jar fabric-server-launch.jar --nogui --universe worlds", true, true, "0.16.9"},
 		{JavaChoice{LoaderForge, "1.21.1"}, "1.21.1", "@libraries/net/minecraftforge/forge/1.21.1-52.0.16/unix_args.txt", "@libraries/net/minecraftforge/forge/1.21.1-52.0.16/unix_args.txt --nogui --universe worlds", false, true, "52.0.16"},
-		{JavaChoice{LoaderNeoForge, ""}, "1.21.1", "@libraries/net/neoforged/neoforge/21.1.77/unix_args.txt", "@libraries/net/neoforged/neoforge/21.1.77/unix_args.txt --nogui --universe worlds", false, true, "21.1.77"},
+		{JavaChoice{LoaderNeoForge, ""}, "1.21.1", "@libraries/net/neoforged/neoforge/21.1.77/unix_args.txt", "@libraries/net/neoforged/neoforge/21.1.77/unix_args.txt --nogui --universe worlds", true, true, "21.1.77"},
 	}
 	for _, c := range cases {
 		st, err := m.CreateJavaOf(c.choice.Loader+" world", 1024, c.choice)
@@ -331,6 +335,16 @@ func TestJavaServerTypes(t *testing.T) {
 			}
 			if readFile(t, filepath.Join(s.dir(), "server.jar")) != "vanilla server 1.21.4" {
 				t.Error("fabric: the Minecraft server underneath")
+			}
+		}
+		if c.choice.Loader == LoaderNeoForge {
+			for _, jar := range []string{"Geyser-NeoForge.jar", "floodgate-neoforge.jar"} {
+				if !fileExists(filepath.Join(s.dir(), "mods", jar)) {
+					t.Errorf("neoforge console support: %s missing", jar)
+				}
+			}
+			if fileExists(filepath.Join(s.dir(), "mods", "fabric-api.jar")) {
+				t.Error("neoforge: Fabric API is for Fabric")
 			}
 		}
 		_ = s.Stop()
@@ -415,6 +429,7 @@ func TestModpackServer(t *testing.T) {
 	defer delete(mrpackHosts, host)
 	m := newLoaderManager(t, java, f)
 	f.mu.Lock()
+	f.geyserFor = []string{"1.21.4"} // not the pack's 1.21.1: consoles go off
 	f.packs["pack1"] = mrpack(t, f.srv.URL, []map[string]any{
 		packEntry(f.srv.URL, "mods/lithium.jar", "lithium", "required"),
 		packEntry(f.srv.URL, "mods/sodium.jar", "sodium", "unsupported"),

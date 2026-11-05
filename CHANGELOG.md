@@ -19,6 +19,12 @@
   mods added yourself are kept; the old version's files the new one doesn't
   have are removed. This works for servers made from now on (the panel
   needs to know which files the pack put in).
+- **Consoles can join NeoForge servers.** NeoForge servers get Geyser and
+  Floodgate for NeoForge, like Fabric servers get theirs, and a new one
+  goes on the newest Minecraft Geyser supports that has a finished
+  NeoForge. NeoForge servers made before get console support at their next
+  Update (turn it off under Settings → Console players if you'd rather
+  not). Forge still can't: Geyser doesn't run on it.
 
 ## 1.6.1
 

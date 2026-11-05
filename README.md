@@ -370,8 +370,8 @@ default):
 | Vanilla | Mojang's own server | No |
 | [Fabric](https://fabricmc.net) | Fabric mods | Yes (Geyser for Fabric) |
 | [Forge](https://minecraftforge.net) | Forge mods, 1.12.2 and later | No |
-| [NeoForge](https://neoforged.net) | NeoForge mods, 1.20.2 and later | No |
-| Modpack | A Modrinth modpack (.mrpack), searched or uploaded; owner only | Fabric packs only |
+| [NeoForge](https://neoforged.net) | NeoForge mods, 1.20.2 and later | Yes (Geyser for NeoForge) |
+| Modpack | A Modrinth or CurseForge modpack, searched or uploaded; owner only | Fabric and NeoForge packs |
 
 With a CurseForge API key (Settings → CurseForge), modpacks can come from
 CurseForge too: the panel uses the pack's server pack when it has one, or
@@ -459,7 +459,12 @@ tablets and Windows). The panel installs and keeps up to date three plugins:
 Floodgate (lets those players in with their Xbox sign-in, no Java account
 needed) and [ViaVersion](https://hangar.papermc.io/ViaVersion/ViaVersion)
 (lets Geyser in while Paper is on a slightly older Minecraft than Geyser
-speaks). Turn it off per server under **Settings → Console players**.
+speaks). Fabric servers get Geyser's and Floodgate's Fabric mods (and
+Fabric API), NeoForge servers their NeoForge mods; Forge servers can't take
+console players, since Geyser doesn't run on Forge. Turn it off per server
+under **Settings → Console players**. Console players see the blocks and
+items Bedrock already has: a mod's new blocks and mobs show up as stand-ins
+for them.
 
 - Consoles use the **same port**, over UDP (Java players use TCP), and the
   server shows up in the console server list while it runs. Minecraft 26.60

@@ -492,9 +492,9 @@ func (s *Server) installLoader(ctx context.Context, update bool) error {
 	if !update && loaderVersion != "" {
 		pinnedLoader = loaderVersion // a modpack asks for its exact loader
 	}
-	// A new Purpur or Fabric server with consoles goes on the newest
-	// Minecraft Geyser supports.
-	if target == "" && s.ConsolesOn() && (loader == LoaderPurpur || loader == LoaderFabric) {
+	// A new Purpur, Fabric or NeoForge server with consoles goes on the
+	// newest Minecraft Geyser supports.
+	if target == "" && s.ConsolesOn() && (loader == LoaderPurpur || loader == LoaderFabric || loader == LoaderNeoForge) {
 		if v, err := s.m.newestForGeyser(ctx, loader); err == nil && v != "" {
 			target = v
 		} else if err != nil {
@@ -721,6 +721,16 @@ func (m *Manager) newestForGeyser(ctx context.Context, loader string) (string, e
 	list, err := m.JavaVersions(ctx, loader)
 	if err != nil {
 		return "", err
+	}
+	if loader == LoaderNeoForge {
+		// As for a server without consoles: a finished NeoForge over a beta.
+		if versions, err := m.neoForgeVersions(ctx); err == nil {
+			for _, v := range list {
+				if allowed[v] && !strings.HasSuffix(neoForgeFor(versions, v), "-beta") {
+					return v, nil
+				}
+			}
+		}
 	}
 	for _, v := range list {
 		if allowed[v] {

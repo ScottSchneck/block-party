@@ -52,7 +52,7 @@ type consolePlugin struct {
 	File     string
 	Label    string
 	Required bool   // without it consoles can't join
-	Dir      string // plugins (Paper, Purpur) or mods (Fabric)
+	Dir      string // plugins (Paper, Purpur) or mods (Fabric, NeoForge)
 	// Source: "geyser:<platform>" (download.geysermc.org), "hangar" (Hangar's
 	// ViaVersion), or "modrinth:<project>" (for the server's Minecraft
 	// version and mod loader).
@@ -74,6 +74,14 @@ var fabricConsolePlugins = []consolePlugin{
 	{Key: "fabric-api", Name: "fabric-api", File: "fabric-api.jar", Label: "Fabric API", Required: true, Dir: "mods", Source: "modrinth:fabric-api"},
 }
 
+// neoForgeConsolePlugins: Geyser and Floodgate's NeoForge mods (GeyserMC
+// publishes Geyser for NeoForge, and Floodgate for it on Modrinth). NeoForge
+// needs no extra library mod.
+var neoForgeConsolePlugins = []consolePlugin{
+	{Key: "geyser", Name: "geyser", File: "Geyser-NeoForge.jar", Label: "Geyser", Required: true, Dir: "mods", Source: "geyser:neoforge"},
+	{Key: "floodgate", Name: "floodgate", File: "floodgate-neoforge.jar", Label: "Floodgate", Required: true, Dir: "mods", Source: "modrinth:floodgate"},
+}
+
 // consoleSet is console support's plugins (or mods) for a server type; nil
 // for types consoles can't join.
 func consoleSet(loader string) []consolePlugin {
@@ -82,6 +90,8 @@ func consoleSet(loader string) []consolePlugin {
 		return consolePlugins
 	case LoaderFabric:
 		return fabricConsolePlugins
+	case LoaderNeoForge:
+		return neoForgeConsolePlugins
 	}
 	return nil
 }
@@ -143,9 +153,9 @@ func (s *Server) consolesInstalledIn(set []consolePlugin) bool {
 	return true
 }
 
-// otherModCopy returns the file name of a copy of a Fabric console mod put
-// in mods/ by hand (fabric-api-0.92.jar), which is used instead of the
-// panel's own, or "".
+// otherModCopy returns the file name of a copy of a Fabric or NeoForge
+// console mod put in mods/ by hand (fabric-api-0.92.jar), which is used
+// instead of the panel's own, or "".
 func (s *Server) otherModCopy(p consolePlugin) string {
 	if p.Dir != "mods" {
 		return ""
@@ -165,7 +175,7 @@ func (s *Server) otherModCopy(p consolePlugin) string {
 // ---- where the plugins come from ----
 
 // latestGeyserProject asks GeyserMC for the newest build of geyser or
-// floodgate for a platform ("spigot" for Paper, "fabric").
+// floodgate for a platform ("spigot" for Paper, "fabric", "neoforge").
 func (m *Manager) latestGeyserProject(ctx context.Context, project, platform string) (pluginRelease, error) {
 	var b struct {
 		Version   string `json:"version"`
@@ -394,7 +404,7 @@ func (m *Manager) LatestConsolePlugins() map[string]pluginRelease {
 // build than the one installed (or isn't installed). Caller holds s.mu.
 func (s *Server) consolePluginsBehindLocked() bool {
 	if !s.consolesOnLocked() || s.meta.Version == "" || !runsPlugins(s.loaderLocked()) {
-		return false // Fabric's Geyser is checked on Update and overnight
+		return false // Fabric's and NeoForge's Geyser is checked on Update and overnight
 	}
 	latest := s.m.LatestConsolePlugins()
 	for _, p := range consolePlugins {
@@ -492,7 +502,7 @@ func (s *Server) ensureConsolePlugins(ctx context.Context) (updated bool, err er
 		path := filepath.Join(dir, p.File)
 		if other := s.otherModCopy(p); other != "" {
 			// A copy put in mods/ by hand is the one that runs (two copies
-			// stop Fabric from starting).
+			// stop the mod loader from starting).
 			if err := os.Remove(path); err == nil {
 				s.say(fmt.Sprintf("Using %s, already in the mods folder, for console support's %s.", other, p.Label))
 			}
