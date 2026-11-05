@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.7.0
+
+- **A Mods tab for Fabric, Forge and NeoForge servers.** It works like the
+  Plugins tab: search Modrinth (and CurseForge, with a key) for mods made
+  for the server's loader and Minecraft version that run on servers,
+  install one with the mods it needs, see when there's an update, turn
+  mods off and on, and remove them. Each download is checked against the
+  site's checksum. Mods added by hand show too.
+
 ## 1.6.1
 
 - **CurseForge searches only show what will work.** For a Bedrock server,

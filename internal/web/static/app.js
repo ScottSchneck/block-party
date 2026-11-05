@@ -333,7 +333,8 @@ function renderDetailHead(s) {
     access(s) >= CARE ? updBtn : null].filter(Boolean));
   for (const t of ["players", "settings", "addons", "backups"]) $("tab-" + t).hidden = copying;
   $("tab-addons").hidden = copying || (s.type && s.type !== "bedrock"); // Bedrock add-ons
-  $("tab-plugins").hidden = copying || s.type !== "java" || !["paper", "purpur", undefined, ""].includes(s.loader) || access(s) < CARE; // Paper and Purpur plugins
+  $("tab-plugins").hidden = copying || !runsJars(s) || access(s) < CARE; // Paper and Purpur plugins, or mods
+  $("tab-plugins").textContent = runsModsJS(s) ? "Mods" : "Plugins";
   $("tab-tasks").hidden = copying || access(s) < CARE;
   $("tab-files").hidden = copying || access(s) < CARE;
   $("ov-backups-link").textContent = access(s) >= CARE ? "Restore or download" : "See backups";
@@ -463,7 +464,7 @@ function route() {
     const s = serverList.find((x) => x.id === id);
     let tabOK = !(s && s.state === "importing" && ["players", "settings", "addons", "plugins", "backups", "tasks", "files"].includes(t));
     if (s && (t === "tasks" || t === "files") && access(s) < CARE) tabOK = false;
-    if (s && t === "plugins" && (s.type !== "java" || !["paper", "purpur", undefined, ""].includes(s.loader) || access(s) < CARE)) tabOK = false;
+    if (s && t === "plugins" && (!runsJars(s) || access(s) < CARE)) tabOK = false;
     if (s && t === "addons" && s.type && s.type !== "bedrock") tabOK = false;
     acceptedHash = location.hash;
     setView("server");
@@ -2565,9 +2566,9 @@ const loaderHelp = {
   paper: "Faster than Mojang's own server, and runs plugins (the Plugins tab). Consoles, phones and tablets can join too, through Geyser, which the panel installs.",
   purpur: "Paper with many extra settings (in purpur.yml); runs the same plugins. Consoles can join too.",
   vanilla: "Mojang's own server, nothing added. Consoles can't join it.",
-  fabric: "For Fabric mods. Add mods in the Files tab (the mods folder, owner only), with versions made for this Minecraft. Consoles can join too, through Geyser for Fabric.",
-  forge: "For Forge mods. Add mods in the Files tab (the mods folder, owner only). Consoles can't join modded Forge servers.",
-  neoforge: "For NeoForge mods. Add mods in the Files tab (the mods folder, owner only). Consoles can't join.",
+  fabric: "For Fabric mods, found and installed in the Mods tab. Consoles can join too, through Geyser for Fabric.",
+  forge: "For Forge mods, found and installed in the Mods tab. Consoles can't join Forge servers.",
+  neoforge: "For NeoForge mods, found and installed in the Mods tab. Consoles can't join.",
   modpack: "A whole pack of mods from Modrinth: the panel installs the Minecraft version, mod loader and mods it needs. Packs made for Fabric, Forge and NeoForge work. Give it at least 4 GB of memory.",
 };
 const versionLists = {};
@@ -3008,6 +3009,34 @@ function showPluginsError(err) {
   if (err) $("plugins-error").scrollIntoView({ block: "nearest" });
 }
 
+// Paper and Purpur run plugins; Fabric, Forge and NeoForge run mods. Both
+// are on the same tab.
+const runsModsJS = (s) => s.type === "java" && ["fabric", "forge", "neoforge"].includes(s.loader);
+const runsJars = (s) => s.type === "java" && ["paper", "purpur", undefined, "", "fabric", "forge", "neoforge"].includes(s.loader);
+const siteNames = { hangar: "Hangar", modrinth: "Modrinth", curseforge: "CurseForge" };
+const loaderNames = { fabric: "Fabric", forge: "Forge", neoforge: "NeoForge" };
+
+// pluginWords sets the tab's words for plugins or mods.
+function pluginWords(v) {
+  const mods = v.kind === "mods";
+  const loader = loaderNames[v.loader] || "";
+  $("plugins-h").textContent = mods ? "Mods" : "Plugins";
+  $("plugins-intro").textContent = mods
+    ? `Mods change and add to the game: new blocks, mobs, machines, magic, maps. Players need the same mods in their own game to join (Java players use a mod launcher like the CurseForge app or Prism Launcher). Changes apply when the server next starts. Mods keep their settings in config/.`
+    : "Plugins add things to a Java server: land claims, homes and teleports, maps, mini-games. Changes apply when the server next starts. Each plugin keeps its settings in its own folder in plugins/.";
+  $("plugins-find-h").textContent = mods ? "Find mods" : "Find plugins";
+  $("plugins-from").textContent = mods
+    ? `From Modrinth${joinInfo && joinInfo.curseforge ? " and CurseForge" : ""}, ${loader} mods that run on servers, made for Minecraft `
+    : "From Hangar (PaperMC's plugin site) and Modrinth, made for Minecraft ";
+  $("plugins-how").textContent = mods
+    ? ". The panel installs the newest release for that version, and any mods it needs, and checks each download. Mods run their own code on your server, so stick to well-known ones." + (joinInfo && !joinInfo.curseforge && me.owner ? " Add a CurseForge key in Settings to search CurseForge too." : "")
+    : ". The panel installs the newest release for that version, and any plugins it needs, and checks each download. Plugins run their own code on your server, so stick to well-known ones.";
+  $("plugin-q").placeholder = mods ? "Search, e.g. storage, machines, backpacks" : "Search, e.g. land claims, homes, maps";
+  $("plugin-q").setAttribute("aria-label", mods ? "Search mods" : "Search plugins");
+  $("plugins-ask").textContent = `Only the owner adds, updates and removes ${v.kind}, because they run their own code on the computer. You can turn installed ones off and on.`;
+  $("plugins-restart-text").textContent = `Restart the server to use the ${mods ? "mod" : "plugin"} changes. Players are disconnected for a moment.`;
+}
+
 function resetPlugins() {
   pluginsFor = null;
   pluginsView = null;
@@ -3045,6 +3074,8 @@ async function loadPlugins() {
 
 function renderPlugins(v) {
   pluginsView = v;
+  pluginWords(v);
+  const mods = v.kind === "mods";
   if (pluginResults) renderPluginResults($("plugin-q").value.trim());
   const owner = me.owner;
   $("plugins-find").hidden = !owner;
@@ -3056,7 +3087,7 @@ function renderPlugins(v) {
     const bits = [];
     if (p.version) bits.push(p.version);
     if (p.console) bits.push("console support, kept up to date by the panel");
-    else if (p.source) bits.push(`from ${p.source === "hangar" ? "Hangar" : "Modrinth"}` + (p.for ? ` (${p.for} needs it)` : ""));
+    else if (p.source) bits.push(`from ${siteNames[p.source] || p.source}` + (p.for ? ` (${p.for} needs it)` : ""));
     else bits.push("added by hand");
     const newer = pluginUpdates[p.file];
     const title = p.page ? el("a", { href: p.page, target: "_blank", rel: "noopener noreferrer" }, p.title || p.name) : (p.title || p.name);
@@ -3069,14 +3100,15 @@ function renderPlugins(v) {
       if (owner && newer && p.source) buttons.push(btn("Update", (ev) => pluginCall(ev, () => post(`${sid()}/plugins/${enc(p.file)}/update`), () => { delete pluginUpdates[p.file]; }), "primary"));
       buttons.push(btn(p.enabled ? "Turn off" : "Turn on", (ev) => pluginCall(ev, () => post(`${sid()}/plugins/${enc(p.file)}/enabled`, { enabled: !p.enabled }))));
       if (owner) buttons.push(btn("Remove", (ev) => {
-        const users = v.plugins.filter((x) => x.enabled && (x.needs || []).some((n) => n.toLowerCase() === p.name.toLowerCase())).map((x) => x.title || x.name);
+        const key = (p.key || p.name).toLowerCase();
+        const users = v.plugins.filter((x) => x.enabled && (x.needs || []).some((n) => n.toLowerCase() === key)).map((x) => x.title || x.name);
         const warn = users.length ? `\n\n${users.join(", ")} needs it, and won't work without it.` : "";
-        if (!confirm(`Remove ${p.title || p.name}? Its settings folder is kept, in case you add it again.${warn}`)) return;
+        if (!confirm(`Remove ${p.title || p.name}? Its settings ${mods ? "in config/ are" : "folder is"} kept, in case you add it again.${warn}`)) return;
         pluginCall(ev, () => del(`${sid()}/plugins/${enc(p.file)}`));
       }, "danger"));
     }
     return el("li", { class: p.enabled ? "" : "off" }, name, ...buttons);
-  }) : [emptyRow(owner ? "No plugins yet. Find some below." : "No plugins yet.")]));
+  }) : [emptyRow(owner ? `No ${v.kind} yet. Find some below.` : `No ${v.kind} yet.`)]));
 }
 
 // pluginCall runs a plugin change, showing it's working on the button.
@@ -3102,7 +3134,7 @@ let pluginSearchSeq = 0;
 async function searchPlugins(q) {
   const id = selected;
   const seq = ++pluginSearchSeq;
-  $("plugin-results").replaceChildren(emptyRow(q ? "Searching…" : "Loading popular plugins…"));
+  $("plugin-results").replaceChildren(emptyRow(q ? "Searching…" : `Loading popular ${pluginsView ? pluginsView.kind : "plugins"}…`));
   try {
     const r = await api(`${sid()}/plugins/search?q=${encodeURIComponent(q)}`);
     if (id !== selected || seq !== pluginSearchSeq) return; // a newer search is on its way
@@ -3118,7 +3150,7 @@ function renderPluginResults(q) {
   $("plugin-results").replaceChildren(...(pluginResults.length ? pluginResults.map((p) => {
     const icon = p.icon ? el("img", { src: p.icon, alt: "", class: "plugin-icon", loading: "lazy", referrerpolicy: "no-referrer" }) : el("span", { class: "plugin-icon" });
     const title = p.page ? el("a", { href: p.page, target: "_blank", rel: "noopener noreferrer" }, p.name) : p.name;
-    const who = el("span", { class: "who" }, el("span", {}, title, el("span", { class: "tag" }, p.source === "hangar" ? "Hangar" : "Modrinth")),
+    const who = el("span", { class: "who" }, el("span", {}, title, el("span", { class: "tag" }, siteNames[p.source] || p.source)),
       el("small", {}, [p.author ? "by " + p.author : "", `${fmt(p.downloads)} downloads`, p.description].filter(Boolean).join(" · ")));
     const have = pluginsView && pluginsView.plugins.some((x) => x.source === p.source && x.id === p.id);
     return el("li", {}, icon, who, have ? el("span", { class: "badge" }, "Installed")

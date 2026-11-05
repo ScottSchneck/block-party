@@ -107,7 +107,8 @@ PS5, and the panel runs a family's servers day to day. See the
 - **The web panel** at `https://<container IP>:8443`, for desktop and phone:
   a dashboard of every server (status, players, version, last backup, a note
   when a new Bedrock version is out), and for each server an Overview,
-  Players, Settings, Add-ons (Bedrock) or Plugins (Paper and Purpur),
+  Players, Settings, Add-ons (Bedrock), Plugins (Paper and Purpur) or Mods
+  (Fabric, Forge and NeoForge),
   Backups, Tasks, Files and Console. Two looks, each light or dark (or
   following the device): **Control Room**, compact with every server in one
   table, and **Treehouse**, big tiles and buttons and plain words ("Turn on",
@@ -378,11 +379,11 @@ fetches its mods (leaving out ones only for players' games). Mods whose
 creators only allow downloads from CurseForge itself are listed in the
 console, to download and upload by hand.
 
-Mods go in the server's `mods` folder: the owner adds them in the **Files**
-tab, made for the server's Minecraft version and loader. A modpack server
-gets the Minecraft version, loader and mods its pack asks for (only the
-pack's server-side files, each checked against its checksum). CurseForge
-packs aren't supported yet.
+Mods go in the server's `mods` folder: the owner finds and installs them on
+the **Mods** tab (see [Plugins and mods](#plugins-and-mods)), or uploads
+them in the **Files** tab. A modpack server gets the Minecraft version,
+loader and mods its pack asks for (only the pack's server-side files, each
+checked against its checksum).
 
 A server on a version you chose, and every modded one, stays on its
 Minecraft version: **Update** gets the newest build of the same version
@@ -409,9 +410,18 @@ way back.
 
 The Add-ons tab is for Bedrock servers.
 
-#### Plugins
+#### Plugins and mods
 
-Paper and Purpur servers have a **Plugins** tab. The owner searches
+Paper and Purpur servers have a **Plugins** tab; Fabric, Forge and NeoForge
+servers have a **Mods** tab that works the same way, searching
+[Modrinth](https://modrinth.com), and CurseForge when there's a CurseForge
+key, for mods made for the server's loader and Minecraft version that run
+on servers (ones only for players' games are left out). Mods a mod needs
+are installed with it; Fabric API that came with console support counts.
+Players need the same mods in their own game to join. The rest of this
+section goes for mods too.
+
+The owner searches
 [Hangar](https://hangar.papermc.io) (PaperMC's plugin site) and
 [Modrinth](https://modrinth.com) together. Only plugins with a release for
 the server's Minecraft version are shown (the tab says how many others were

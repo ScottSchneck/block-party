@@ -222,6 +222,7 @@ func cfClassFor(classes map[string]int, kind string) int {
 		CFTextures: {"texture-packs", "resource-packs", "texturepacks"},
 		CFWorlds:   {"maps", "worlds"},
 		CFModpacks: {"modpacks"},
+		cfJavaMods: {"mc-mods"},
 	}[kind]
 	for _, w := range want {
 		if id := classes[w]; id != 0 {
@@ -514,17 +515,21 @@ func (m *Manager) SearchCurseForge(ctx context.Context, kind, query, forVersion 
 }
 
 type cfFile struct {
-	ID               int      `json:"id"`
-	ModID            int      `json:"modId"`
-	DisplayName      string   `json:"displayName"`
-	FileName         string   `json:"fileName"`
-	ReleaseType      int      `json:"releaseType"`
-	FileDate         string   `json:"fileDate"`
-	DownloadURL      string   `json:"downloadUrl"`
-	GameVersions     []string `json:"gameVersions"`
-	IsServerPack     bool     `json:"isServerPack"`
-	ServerPackFileID int      `json:"serverPackFileId"`
-	FileLength       int64    `json:"fileLength"`
+	ID           int      `json:"id"`
+	ModID        int      `json:"modId"`
+	DisplayName  string   `json:"displayName"`
+	FileName     string   `json:"fileName"`
+	ReleaseType  int      `json:"releaseType"`
+	FileDate     string   `json:"fileDate"`
+	DownloadURL  string   `json:"downloadUrl"`
+	GameVersions []string `json:"gameVersions"`
+	IsServerPack bool     `json:"isServerPack"`
+	Dependencies []struct {
+		ModID        int `json:"modId"`
+		RelationType int `json:"relationType"` // 3: it's needed
+	} `json:"dependencies"`
+	ServerPackFileID int   `json:"serverPackFileId"`
+	FileLength       int64 `json:"fileLength"`
 	Hashes           []struct {
 		Value string `json:"value"`
 		Algo  int    `json:"algo"`
@@ -980,4 +985,158 @@ func (s *Server) cfPackMods(ctx context.Context, root *os.Root, mf cfManifest) (
 	}
 	s.say(fmt.Sprintf("Downloaded %d mods (%d left out: only for players' games, texture packs or shaders).", got, skipped))
 	return blocked, nil
+}
+
+// ---- Java mods (the Mods tab) ----
+
+// cfJavaMods is the class of Java mods.
+const cfJavaMods = "mc-mods"
+
+// cfLoaderType is CurseForge's number for a mod loader.
+func cfLoaderType(loader string) int {
+	switch loader {
+	case LoaderForge:
+		return cfForge
+	case LoaderFabric:
+		return cfFabric
+	case LoaderNeoForge:
+		return cfNeoForge
+	}
+	return 0
+}
+
+// cfLoaderNames are the names CurseForge tags files with for each loader.
+var cfLoaderNames = map[string]string{"forge": LoaderForge, "fabric": LoaderFabric, "neoforge": LoaderNeoForge, "quilt": "quilt"}
+
+// searchCurseForgeMods searches CurseForge's Java mods for a server type and
+// Minecraft version. blocked counts the ones only downloadable from
+// CurseForge itself, which are left out.
+func (m *Manager) searchCurseForgeMods(ctx context.Context, query, minecraft, loader string) (out []PluginResult, blocked int, err error) {
+	classes, err := m.cfClasses(ctx, curseForgeJava)
+	if err != nil {
+		return nil, 0, err
+	}
+	class := cfClassFor(classes, cfJavaMods)
+	if class == 0 {
+		return nil, 0, errors.New("CurseForge has no mods section")
+	}
+	q := url.Values{"gameId": {strconv.Itoa(curseForgeJava)}, "classId": {strconv.Itoa(class)}, "pageSize": {strconv.Itoa(searchLimit)},
+		"sortOrder": {"desc"}, "modLoaderType": {strconv.Itoa(cfLoaderType(loader))}}
+	if minecraft != "" {
+		q.Set("gameVersion", minecraft)
+	}
+	if query != "" {
+		q.Set("searchFilter", query)
+		q.Set("sortField", "2")
+	} else {
+		q.Set("sortField", "6")
+	}
+	var res struct {
+		Data []cfMod `json:"data"`
+	}
+	if err := m.cfGet(ctx, "/v1/mods/search?"+q.Encode(), &res); err != nil {
+		return nil, 0, err
+	}
+	for _, c := range res.Data {
+		r, _ := c.result(nil)
+		if !r.Installable {
+			blocked++
+			continue
+		}
+		out = append(out, PluginResult{Source: SourceCurseForge, ID: strconv.Itoa(c.ID), Name: r.Name, Author: r.Author,
+			Description: r.Description, Icon: r.Icon, Page: r.Page, Downloads: r.Downloads})
+	}
+	return out, blocked, nil
+}
+
+// latestCurseForgeMod finds the newest file of a CurseForge mod for a
+// Minecraft version and loader, made for servers.
+func (m *Manager) latestCurseForgeMod(ctx context.Context, id, minecraft, loader string) (pluginFile, error) {
+	n, err := strconv.Atoi(id)
+	if err != nil || n <= 0 {
+		return pluginFile{}, errors.New("that isn't a CurseForge mod")
+	}
+	mod, err := m.cfMod(ctx, n)
+	if err != nil {
+		return pluginFile{}, fmt.Errorf("couldn't find it on CurseForge: %w", err)
+	}
+	title, page := mod.Name, httpsOnly(mod.Links.WebsiteURL)
+	if title == "" {
+		title = id
+	}
+	if mod.AllowModDistribution != nil && !*mod.AllowModDistribution {
+		return pluginFile{}, cfNotDistributable(title, page)
+	}
+	q := url.Values{"pageSize": {"50"}, "modLoaderType": {strconv.Itoa(cfLoaderType(loader))}}
+	if minecraft != "" {
+		q.Set("gameVersion", minecraft)
+	}
+	var res struct {
+		Data []cfFile `json:"data"`
+	}
+	if err := m.cfGet(ctx, fmt.Sprintf("/v1/mods/%d/files?%s", n, q.Encode()), &res); err != nil {
+		return pluginFile{}, fmt.Errorf("couldn't ask CurseForge for its files: %w", err)
+	}
+	var fits []cfFile
+	for _, f := range res.Data {
+		if f.IsServerPack || !strings.HasSuffix(strings.ToLower(f.FileName), ".jar") {
+			continue
+		}
+		mc, client, server, loaders, ours := minecraft == "", false, false, 0, false
+		for _, v := range f.GameVersions {
+			switch {
+			case v == minecraft:
+				mc = true
+			case strings.EqualFold(v, "Client"):
+				client = true
+			case strings.EqualFold(v, "Server"):
+				server = true
+			}
+			if l, ok := cfLoaderNames[strings.ToLower(v)]; ok {
+				loaders++
+				ours = ours || l == loader
+			}
+		}
+		if mc && (loaders == 0 || ours) && !(client && !server) {
+			fits = append(fits, f)
+		}
+	}
+	if len(fits) == 0 {
+		return pluginFile{}, &noVersionError{title, minecraft}
+	}
+	sort.SliceStable(fits, func(i, j int) bool {
+		a, b := fits[i], fits[j]
+		if (a.ReleaseType == 1) != (b.ReleaseType == 1) {
+			return a.ReleaseType == 1 // a release over a beta
+		}
+		return a.FileDate > b.FileDate
+	})
+	f := fits[0]
+	if f.DownloadURL == "" {
+		return pluginFile{}, cfNotDistributable(title, page)
+	}
+	if !cfDownloadable(f.DownloadURL) {
+		return pluginFile{}, fmt.Errorf("CurseForge gave an unexpected download address for %s", title)
+	}
+	if f.sha1() == "" {
+		return pluginFile{}, fmt.Errorf("CurseForge has no checked download of %s", title)
+	}
+	version := strings.TrimSuffix(f.DisplayName, ".jar")
+	if version == "" {
+		version = strings.TrimSuffix(f.FileName, ".jar")
+	}
+	switch f.ReleaseType {
+	case 2:
+		version += " (beta)"
+	case 3:
+		version += " (alpha)"
+	}
+	out := pluginFile{Source: SourceCurseForge, ID: strconv.Itoa(n), Title: title, Page: page, Version: version,
+		URL: f.DownloadURL, Hash: f.sha1(), FileName: path.Base(strings.ReplaceAll(f.FileName, "\\", "/"))}
+	for _, d := range f.Dependencies {
+		if d.RelationType == 3 && d.ModID > 0 {
+			out.Needs = append(out.Needs, pluginNeed{Source: SourceCurseForge, ID: strconv.Itoa(d.ModID)})
+		}
+	}
+	return out, nil
 }

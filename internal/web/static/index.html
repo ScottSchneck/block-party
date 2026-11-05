@@ -1145,7 +1145,7 @@
       <div id="pane-plugins" hidden>
         <p id="plugins-error" class="error" hidden></p>
         <div id="plugins-restart" class="card notice" hidden>
-          <p>Restart the server to use the plugin changes. Players are disconnected for a moment.</p>
+          <p id="plugins-restart-text">Restart the server to use the plugin changes. Players are disconnected for a moment.</p>
           <div class="row">
             <button type="button" id="plugins-restart-now" class="primary">Restart now</button>
             <button type="button" id="plugins-restart-later">Later</button>
@@ -1153,14 +1153,14 @@
         </div>
 
         <section class="card">
-          <h3>Plugins</h3>
-          <p class="muted small">Plugins add things to a Java server: land claims, homes and teleports, maps, mini-games. Changes apply when the server next starts. Each plugin keeps its settings in its own folder in plugins/.</p>
+          <h3 id="plugins-h">Plugins</h3>
+          <p id="plugins-intro" class="muted small">Plugins add things to a Java server: land claims, homes and teleports, maps, mini-games. Changes apply when the server next starts. Each plugin keeps its settings in its own folder in plugins/.</p>
           <ul id="plugins-list" class="people"></ul>
         </section>
 
         <section class="card" id="plugins-find" hidden>
-          <h3>Find plugins</h3>
-          <p class="muted small">From Hangar (PaperMC's plugin site) and Modrinth, made for Minecraft <span id="plugins-mc" class="mono"></span>. The panel installs the newest release for that version, and any plugins it needs, and checks each download. Plugins run their own code on your server, so stick to well-known ones.</p>
+          <h3 id="plugins-find-h">Find plugins</h3>
+          <p class="muted small"><span id="plugins-from">From Hangar (PaperMC's plugin site) and Modrinth, made for Minecraft </span><span id="plugins-mc" class="mono"></span><span id="plugins-how">. The panel installs the newest release for that version, and any plugins it needs, and checks each download. Plugins run their own code on your server, so stick to well-known ones.</span></p>
           <form id="plugin-search-form" class="row">
             <input id="plugin-q" maxlength="100" placeholder="Search, e.g. land claims, homes, maps" autocomplete="off" aria-label="Search plugins">
             <button type="submit" class="primary">Search</button>

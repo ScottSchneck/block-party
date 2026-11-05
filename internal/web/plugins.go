@@ -9,9 +9,11 @@ import (
 	"github.com/ScottSchneck/block-party/internal/servers"
 )
 
-// Java plugins. Plugins run their own code on the computer, so only the
-// owner searches for, installs, updates and removes them; someone who takes
-// care of a server sees them and can turn them off and on.
+// Java plugins (Paper, Purpur) and mods (Fabric, Forge, NeoForge), under
+// the same addresses: the server's type decides which. They run their own
+// code on the computer, so only the owner searches for, installs, updates
+// and removes them; someone who takes care of a server sees them and can
+// turn them off and on.
 
 func (s *Server) pluginRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/servers/{id}/plugins", s.withServer(levelCare, s.listPlugins))
@@ -46,7 +48,13 @@ func (s *Server) searchPlugins(w http.ResponseWriter, r *http.Request, srv *serv
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 	defer cancel()
-	results, notes := s.mgr.SearchPlugins(ctx, r.URL.Query().Get("q"), st.Version)
+	var results []servers.PluginResult
+	var notes []string
+	if st.Loader == servers.LoaderFabric || st.Loader == servers.LoaderForge || st.Loader == servers.LoaderNeoForge {
+		results, notes = s.mgr.SearchMods(ctx, r.URL.Query().Get("q"), st.Version, st.Loader)
+	} else {
+		results, notes = s.mgr.SearchPlugins(ctx, r.URL.Query().Get("q"), st.Version)
+	}
 	if notes == nil {
 		notes = []string{}
 	}
@@ -70,7 +78,7 @@ func (s *Server) installPlugin(w http.ResponseWriter, r *http.Request, srv *serv
 		pluginError(w, err)
 		return
 	}
-	s.note(r, srv, "installed the plugin "+title)
+	s.note(r, srv, "installed the "+jarWord(srv)+" "+title)
 	s.listPlugins(w, r, srv)
 }
 
@@ -81,7 +89,7 @@ func (s *Server) updatePlugin(w http.ResponseWriter, r *http.Request, srv *serve
 		pluginError(w, err)
 		return
 	}
-	s.note(r, srv, "updated the plugin "+file+" to "+version)
+	s.note(r, srv, "updated the "+jarWord(srv)+" "+file+" to "+version)
 	s.listPlugins(w, r, srv)
 }
 
@@ -98,9 +106,9 @@ func (s *Server) setPluginEnabled(w http.ResponseWriter, r *http.Request, srv *s
 		return
 	}
 	if req.Enabled {
-		s.note(r, srv, "turned on the plugin "+file)
+		s.note(r, srv, "turned on the "+jarWord(srv)+" "+file)
 	} else {
-		s.note(r, srv, "turned off the plugin "+file)
+		s.note(r, srv, "turned off the "+jarWord(srv)+" "+file)
 	}
 	s.listPlugins(w, r, srv)
 }
@@ -111,6 +119,15 @@ func (s *Server) removePlugin(w http.ResponseWriter, r *http.Request, srv *serve
 		pluginError(w, err)
 		return
 	}
-	s.note(r, srv, "removed the plugin "+file)
+	s.note(r, srv, "removed the "+jarWord(srv)+" "+file)
 	s.listPlugins(w, r, srv)
+}
+
+// jarWord is what a server's jars are called, for the activity list.
+func jarWord(srv *servers.Server) string {
+	switch srv.Status().Loader {
+	case servers.LoaderFabric, servers.LoaderForge, servers.LoaderNeoForge:
+		return "mod"
+	}
+	return "plugin"
 }

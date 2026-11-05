@@ -51,6 +51,51 @@ type fakeLoaders struct {
 	purpurB    string
 	geyserFor  []string // Minecraft versions Geyser for Fabric supports
 	packs      map[string][]byte
+	mods       map[string]*fakeMod // Modrinth mods with real jars, by project ID
+}
+
+// fakeMod is a mod on the fake Modrinth.
+type fakeMod struct {
+	title, modID, version string
+	loader                string   // "fabric", "forge" or "neoforge"
+	needs                 []string // project IDs
+	needIDs               []string // mod IDs its own file names
+}
+
+func (m *fakeMod) jar() []byte {
+	return modJar(m.loader, m.modID, m.title, m.version, m.needIDs...)
+}
+
+// modJar makes a mod's jar, with fabric.mod.json or mods.toml.
+func modJar(loader, id, name, version string, needs ...string) []byte {
+	var buf bytes.Buffer
+	z := zip.NewWriter(&buf)
+	switch loader {
+	case "fabric":
+		deps := map[string]string{"minecraft": "~1.21.4", "fabricloader": ">=0.16"}
+		for _, n := range needs {
+			deps[n] = "*"
+		}
+		b, _ := json.Marshal(map[string]any{"schemaVersion": 1, "id": id, "name": name, "version": version, "depends": deps})
+		w, _ := z.Create("fabric.mod.json")
+		w.Write(b)
+	default:
+		file := "META-INF/mods.toml"
+		if loader == "neoforge" {
+			file = "META-INF/neoforge.mods.toml"
+		}
+		w, _ := z.Create(file)
+		fmt.Fprintf(w, "modLoader=\"javafml\"\nloaderVersion=\"[1,)\"\n[[mods]]\nmodId=\"%s\"\nversion=\"${file.jarVersion}\"\ndisplayName=\"%s\"\ndescription='''\nA mod.\n[[not a section]]\n'''\n", id, name)
+		fmt.Fprintf(w, "[[dependencies.%s]]\nmodId=\"minecraft\"\nmandatory=true\n", id)
+		for _, n := range needs {
+			fmt.Fprintf(w, "[[dependencies.%s]]\n  modId = \"%s\" # needed\n  type=\"required\"\n  side=\"BOTH\"\n", id, n)
+		}
+		fmt.Fprintf(w, "[[dependencies.%s]]\nmodId=\"jei\"\nmandatory=false\n", id)
+		mf, _ := z.Create("META-INF/MANIFEST.MF")
+		fmt.Fprintf(mf, "Manifest-Version: 1.0\nImplementation-Version: %s\n", version)
+	}
+	z.Close()
+	return buf.Bytes()
 }
 
 func hexOf(sum []byte) string { return hex.EncodeToString(sum) }
@@ -135,6 +180,36 @@ func newFakeLoaders(t *testing.T) *fakeLoaders {
 			w.Write([]byte("packmod " + strings.TrimPrefix(p, "/packmod/")))
 		case p == "/modrinth/project/geyser/version":
 			enc.Encode([]map[string]any{{"game_versions": f.geyserFor, "date_published": "2026-10-10T00:00:00Z"}})
+		case p == "/modrinth/search":
+			q := r.URL.Query()
+			var out []map[string]any
+			for id, x := range f.mods {
+				if strings.Contains(q.Get("facets"), `"categories:`+x.loader+`"`) && strings.Contains(q.Get("facets"), "project_type:mod") &&
+					strings.Contains(strings.ToLower(x.title), strings.ToLower(q.Get("query"))) {
+					out = append(out, map[string]any{"project_id": id, "slug": id, "title": x.title, "author": "dev", "downloads": 10})
+				}
+			}
+			enc.Encode(map[string]any{"hits": out})
+		case strings.HasPrefix(p, "/modrinth/project/") && strings.HasSuffix(p, "/version") && f.mods[strings.TrimSuffix(strings.TrimPrefix(p, "/modrinth/project/"), "/version")] != nil:
+			id := strings.TrimSuffix(strings.TrimPrefix(p, "/modrinth/project/"), "/version")
+			x := f.mods[id]
+			if r.URL.Query().Get("loaders") != `["`+x.loader+`"]` || r.URL.Query().Get("game_versions") != `["1.21.4"]` {
+				enc.Encode([]any{})
+				return
+			}
+			jar := x.jar()
+			sum := sha512.Sum512(jar)
+			var deps []map[string]string
+			for _, n := range x.needs {
+				deps = append(deps, map[string]string{"project_id": n, "dependency_type": "required"})
+			}
+			enc.Encode([]map[string]any{{"version_number": x.version, "version_type": "release", "dependencies": deps,
+				"files": []map[string]any{{"url": f.srv.URL + "/realmod/" + id, "filename": id + "-" + x.version + ".jar", "primary": true, "hashes": map[string]string{"sha512": hexOf(sum[:])}}}}})
+		case strings.HasPrefix(p, "/realmod/"):
+			w.Write(f.mods[strings.TrimPrefix(p, "/realmod/")].jar())
+		case strings.HasPrefix(p, "/modrinth/project/") && f.mods[strings.TrimPrefix(p, "/modrinth/project/")] != nil:
+			id := strings.TrimPrefix(p, "/modrinth/project/")
+			enc.Encode(map[string]string{"id": id, "slug": id, "title": f.mods[id].title})
 		case strings.HasPrefix(p, "/modrinth/project/") && strings.HasSuffix(p, "/version"):
 			id := strings.TrimSuffix(strings.TrimPrefix(p, "/modrinth/project/"), "/version")
 			if r.URL.Query().Get("loaders") != `["fabric"]` {

@@ -17,20 +17,24 @@ import (
 	"time"
 )
 
-// Plugins on Java servers. The owner finds them on Hangar (PaperMC's plugin
-// site) and Modrinth, and the panel installs the newest release made for the
-// server's Minecraft version, with the plugins it needs, checking each
-// download against the site's checksum. Plugins live in plugins/ like any
-// Paper server's; a turned-off one is renamed to .jar.disabled, which Paper
-// skips. Changes apply when the server next starts.
+// Plugins and mods on Java servers. Paper and Purpur run plugins, from
+// Hangar (PaperMC's plugin site) and Modrinth; Fabric, Forge and NeoForge run
+// mods, from Modrinth and CurseForge. The owner finds them, and the panel
+// installs the newest release made for the server's Minecraft version (and
+// mod loader), with the ones it needs, checking each download against the
+// site's checksum. They live in plugins/ or mods/ like any server's; a
+// turned-off one is renamed to .jar.disabled, which the server skips.
+// Changes apply when the server next starts. A server runs one or the
+// other, so the same code looks after both ("plugins" below means either).
 
 // Default addresses of the plugin sites (Hangar's is DefaultHangarAPI).
 const DefaultModrinthAPI = "https://api.modrinth.com/v2"
 
 // Plugin sources.
 const (
-	SourceHangar   = "hangar"
-	SourceModrinth = "modrinth"
+	SourceHangar     = "hangar"
+	SourceModrinth   = "modrinth"
+	SourceCurseForge = "curseforge" // mods only
 )
 
 const disabledSuffix = ".disabled"
@@ -74,12 +78,16 @@ type InstalledPlugin struct {
 	Title   string `json:"title,omitempty"`
 	Page    string `json:"page,omitempty"`
 	For     string `json:"for,omitempty"`
-	// Needs are the plugins it needs, by their own names.
+	// Key is its own name (a plugin) or ID (a mod), which Needs uses.
+	Key string `json:"key,omitempty"`
+	// Needs are the plugins it needs, by their own names (mods: IDs).
 	Needs []string `json:"needs,omitempty"`
 }
 
 // PluginsView is the Plugins tab of a Java server.
 type PluginsView struct {
+	Kind          string            `json:"kind"` // "plugins" or "mods"
+	Loader        string            `json:"loader"`
 	Plugins       []InstalledPlugin `json:"plugins"`
 	Minecraft     string            `json:"minecraft"`
 	Running       bool              `json:"running"`
@@ -87,10 +95,21 @@ type PluginsView struct {
 }
 
 var (
-	errNotJavaPlugins = errors.New("plugins are for Paper and Purpur servers (other Java servers use mods, in the Files tab)")
-	errNoSuchPlugin   = errors.New("there's no such plugin on this server")
+	errNotJavaPlugins = errors.New("plugins and mods are for Paper, Purpur, Fabric, Forge and NeoForge servers")
+	errNoSuchPlugin   = errors.New("there's no such plugin or mod on this server")
 	errConsolePlugin  = errors.New("that's part of console support: turn it on or off under Settings, Console players")
 )
+
+// runsJars: plugins (Paper, Purpur) or mods (Fabric, Forge, NeoForge).
+func runsJars(loader string) bool { return runsPlugins(loader) || runsMods(loader) }
+
+// jarWord is what the server's jars are called ("plugin" or "mod").
+func jarWord(loader string) string {
+	if runsMods(loader) {
+		return "mod"
+	}
+	return "plugin"
+}
 
 // ---- the sites ----
 
@@ -114,37 +133,78 @@ type pluginNeed struct {
 // sites. An empty query lists the most downloaded. Results alternate
 // between the sites; a site that can't be reached is left out and noted.
 func (m *Manager) SearchPlugins(ctx context.Context, query, minecraft string) ([]PluginResult, []string) {
+	query = cleanQuery(query)
+	return m.searchSites(ctx, minecraft, LoaderPaper,
+		siteSearch{"Hangar", func() ([]PluginResult, error) { return m.searchHangar(ctx, query, minecraft) }},
+		siteSearch{"Modrinth", func() ([]PluginResult, error) { return m.searchModrinth(ctx, query, minecraft) }})
+}
+
+// SearchMods looks for mods for a server type (Fabric, Forge, NeoForge) and
+// Minecraft version on Modrinth, and on CurseForge when it has a key.
+func (m *Manager) SearchMods(ctx context.Context, query, minecraft, loader string) ([]PluginResult, []string) {
+	query = cleanQuery(query)
+	sites := []siteSearch{{"Modrinth", func() ([]PluginResult, error) { return m.searchModrinthMods(ctx, query, minecraft, loader) }}}
+	var blocked int
+	if m.CurseForgeKeySet() {
+		sites = append(sites, siteSearch{"CurseForge", func() (r []PluginResult, err error) {
+			r, blocked, err = m.searchCurseForgeMods(ctx, query, minecraft, loader)
+			return r, err
+		}})
+	}
+	out, notes := m.searchSites(ctx, minecraft, loader, sites...)
+	if blocked > 0 {
+		notes = append(notes, fmt.Sprintf("%d more found on CurseForge can only be downloaded from CurseForge's own site.", blocked))
+	}
+	return out, notes
+}
+
+func cleanQuery(query string) string {
 	query = strings.TrimSpace(query)
 	if len([]rune(query)) > 100 {
 		query = string([]rune(query)[:100])
 	}
-	var hangar, modrinth []PluginResult
-	var herr, merr error
+	return query
+}
+
+// siteSearch is a search on one site.
+type siteSearch struct {
+	site string
+	run  func() ([]PluginResult, error)
+}
+
+// searchSites runs searches at once and takes turns between their results,
+// keeping only the ones with a download the server can use.
+func (m *Manager) searchSites(ctx context.Context, minecraft, loader string, sites ...siteSearch) ([]PluginResult, []string) {
+	found := make([][]PluginResult, len(sites))
+	errs := make([]error, len(sites))
 	var wg sync.WaitGroup
-	wg.Add(2)
-	go func() { defer wg.Done(); hangar, herr = m.searchHangar(ctx, query, minecraft) }()
-	go func() { defer wg.Done(); modrinth, merr = m.searchModrinth(ctx, query, minecraft) }()
+	for i, st := range sites {
+		wg.Add(1)
+		go func() { defer wg.Done(); found[i], errs[i] = st.run() }()
+	}
 	wg.Wait()
 	var notes []string
-	if herr != nil {
-		notes = append(notes, "Hangar couldn't be searched: "+herr.Error())
-	}
-	if merr != nil {
-		notes = append(notes, "Modrinth couldn't be searched: "+merr.Error())
+	for i, err := range errs {
+		if err != nil {
+			notes = append(notes, sites[i].site+" couldn't be searched: "+err.Error())
+		}
 	}
 	all := []PluginResult{}
-	for i := 0; i < len(hangar) || i < len(modrinth); i++ {
-		if i < len(hangar) {
-			all = append(all, hangar[i])
+	for i := 0; ; i++ {
+		more := false
+		for _, list := range found {
+			if i < len(list) {
+				all, more = append(all, list[i]), true
+			}
 		}
-		if i < len(modrinth) {
-			all = append(all, modrinth[i])
+		if !more {
+			break
 		}
 	}
 	if minecraft == "" {
 		return all, notes
 	}
-	// The sites' searches match a plugin if any of its versions is for this
+	// The sites' searches match one if any of its versions is for this
 	// Minecraft; only keep the ones with a download the server can use.
 	ok := make([]bool, len(all))
 	sem := make(chan struct{}, 8)
@@ -155,7 +215,7 @@ func (m *Manager) SearchPlugins(ctx context.Context, query, minecraft string) ([
 			defer cwg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
-			_, err := m.latestPlugin(ctx, r.Source, r.ID, minecraft) // not the update check's cache
+			_, err := m.latestPlugin(ctx, r.Source, r.ID, minecraft, loader) // not the update check's cache
 			var nv *noVersionError
 			ok[i] = !errors.As(err, &nv)
 		}()
@@ -273,6 +333,48 @@ func (m *Manager) searchModrinth(ctx context.Context, query, minecraft string) (
 	return out, nil
 }
 
+// searchModrinthMods searches Modrinth's mods that run on servers.
+func (m *Manager) searchModrinthMods(ctx context.Context, query, minecraft, loader string) ([]PluginResult, error) {
+	facets := `[["project_type:mod"],["categories:` + loader + `"],["server_side:required","server_side:optional"]`
+	if minecraft != "" {
+		facets += `,["versions:` + minecraft + `"]`
+	}
+	facets += `]`
+	q := url.Values{"limit": {fmt.Sprint(searchLimit)}, "facets": {facets}}
+	if query != "" {
+		q.Set("query", query)
+	} else {
+		q.Set("index", "downloads")
+	}
+	var res struct {
+		Hits []struct {
+			ProjectID   string `json:"project_id"`
+			Slug        string `json:"slug"`
+			Title       string `json:"title"`
+			Author      string `json:"author"`
+			Description string `json:"description"`
+			IconURL     string `json:"icon_url"`
+			Downloads   int64  `json:"downloads"`
+		} `json:"hits"`
+	}
+	if err := m.getJSON(ctx, m.opts.ModrinthAPI+"/search?"+q.Encode(), &res); err != nil {
+		return nil, err
+	}
+	var out []PluginResult
+	for _, p := range res.Hits {
+		if p.ProjectID == "" {
+			continue
+		}
+		r := PluginResult{Source: SourceModrinth, ID: p.ProjectID, Name: p.Title, Author: p.Author,
+			Description: p.Description, Icon: httpsOnly(p.IconURL), Downloads: p.Downloads}
+		if p.Slug != "" {
+			r.Page = "https://modrinth.com/mod/" + url.PathEscape(p.Slug)
+		}
+		out = append(out, r)
+	}
+	return out, nil
+}
+
 // httpsOnly keeps a picture address only if it's https (the page shows it).
 func httpsOnly(u string) string {
 	if strings.HasPrefix(u, "https://") {
@@ -283,11 +385,20 @@ func httpsOnly(u string) string {
 
 var pluginIDPattern = regexp.MustCompile(`^[A-Za-z0-9_.\-]{1,64}$`)
 
-// latestPlugin finds the newest release of a plugin for a Minecraft
-// version.
-func (m *Manager) latestPlugin(ctx context.Context, source, id, minecraft string) (pluginFile, error) {
+// latestPlugin finds the newest release of a plugin (or mod) for a
+// Minecraft version and server type.
+func (m *Manager) latestPlugin(ctx context.Context, source, id, minecraft, loader string) (pluginFile, error) {
 	if !pluginIDPattern.MatchString(id) {
-		return pluginFile{}, errors.New("that isn't a plugin")
+		return pluginFile{}, errors.New("that isn't a " + jarWord(loader))
+	}
+	if runsMods(loader) {
+		switch source {
+		case SourceModrinth:
+			return m.latestModrinthFor(ctx, id, minecraft, loader)
+		case SourceCurseForge:
+			return m.latestCurseForgeMod(ctx, id, minecraft, loader)
+		}
+		return pluginFile{}, errors.New("mods come from Modrinth or CurseForge")
 	}
 	switch source {
 	case SourceHangar:
@@ -394,6 +505,14 @@ func (m *Manager) latestHangar(ctx context.Context, id, minecraft string) (plugi
 	return f, nil
 }
 
+// modrinthKind is Modrinth's page path for a server type's jars.
+func modrinthKind(loader string) string {
+	if runsMods(loader) {
+		return "mod"
+	}
+	return "plugin"
+}
+
 func (m *Manager) latestModrinth(ctx context.Context, id, minecraft string) (pluginFile, error) {
 	return m.latestModrinthFor(ctx, id, minecraft, "paper")
 }
@@ -474,7 +593,7 @@ func (m *Manager) latestModrinthFor(ctx context.Context, id, minecraft, loader s
 		f.ID = id
 	}
 	if project.Slug != "" {
-		f.Page = "https://modrinth.com/plugin/" + url.PathEscape(project.Slug)
+		f.Page = "https://modrinth.com/" + modrinthKind(loader) + "/" + url.PathEscape(project.Slug)
 	}
 	for _, d := range v.Dependencies {
 		if d.DependencyType == "required" && d.ProjectID != "" {
@@ -486,11 +605,17 @@ func (m *Manager) latestModrinthFor(ctx context.Context, id, minecraft, loader s
 
 // ---- what's installed ----
 
-func (s *Server) pluginsDir() string { return filepath.Join(s.dir(), "plugins") }
+// pluginsDir is plugins/, or mods/ on a mod server.
+func (s *Server) pluginsDir() string {
+	if runsMods(s.Loader()) {
+		return filepath.Join(s.dir(), "mods")
+	}
+	return filepath.Join(s.dir(), "plugins")
+}
 
 // pluginRecordsFile lists the plugins the panel installed. It lives in
-// plugins/ (Paper ignores it), so backups and restores keep it in step with
-// the jars.
+// plugins/ or mods/ (the servers ignore it), so backups and restores keep it
+// in step with the jars.
 // Named before the panel was called Block Party (kept for existing servers).
 const pluginRecordsFile = ".blockheads-plugins.json"
 
@@ -575,7 +700,8 @@ func pluginMeta(path string) (name, version string, depends []string, err error)
 type jarEntry struct {
 	file    string // without .disabled
 	enabled bool
-	name    string // from plugin.yml ("" if unreadable)
+	id      string // what the server knows it by: a plugin's name, a mod's ID
+	name    string // from plugin.yml or the mod's own file ("" if unreadable)
 	version string
 	depends []string
 	console bool
@@ -590,6 +716,7 @@ func (j jarEntry) path(dir string) string {
 
 // pluginJars lists the plugin jars, by file name.
 func (s *Server) pluginJars() (map[string]jarEntry, error) {
+	loader := s.Loader()
 	dir := s.pluginsDir()
 	entries, err := os.ReadDir(dir)
 	if errors.Is(err, os.ErrNotExist) {
@@ -617,8 +744,8 @@ func (s *Server) pluginJars() (map[string]jarEntry, error) {
 		default:
 			continue
 		}
-		j.console = isConsolePluginFile(j.file)
-		j.name, j.version, j.depends, _ = pluginMeta(j.path(dir))
+		j.console = isConsoleJar(j.file, loader)
+		j.id, j.name, j.version, j.depends, _ = jarMeta(j.path(dir), loader)
 		out[j.file] = j
 	}
 	return out, nil
@@ -637,8 +764,11 @@ func (s *Server) pluginFiles() (map[string]bool, error) {
 	return out, nil
 }
 
-func isConsolePluginFile(file string) bool {
-	for _, p := range consolePlugins {
+func isConsolePluginFile(file string) bool { return isConsoleJar(file, LoaderPaper) }
+
+// isConsoleJar: one of console support's files for a server type.
+func isConsoleJar(file, loader string) bool {
+	for _, p := range consoleSet(loader) {
 		if strings.EqualFold(p.File, file) {
 			return true
 		}
@@ -646,8 +776,28 @@ func isConsolePluginFile(file string) bool {
 	return false
 }
 
+// jarMeta reads a plugin's or mod's ID, name, version and what it needs.
+func jarMeta(path, loader string) (id, name, version string, depends []string, err error) {
+	if runsMods(loader) {
+		return modMeta(path)
+	}
+	name, version, depends, err = pluginMeta(path)
+	return name, name, version, depends, err
+}
+
 // consolePluginNames are console support's plugins by their own names.
 var consolePluginNames = map[string]string{"geyser-spigot": "Geyser", "floodgate": "Floodgate", "viaversion": "ViaVersion"}
+
+// consoleModIDs are console support's mods by their IDs (Fabric API isn't
+// one: other mods need it too, so it can be installed like any mod).
+var consoleModIDs = map[string]string{"geyser-fabric": "Geyser", "geyser-neoforge": "Geyser", "geyser_neoforge": "Geyser", "geyser": "Geyser", "floodgate": "Floodgate"}
+
+func consoleNames(loader string) map[string]string {
+	if runsMods(loader) {
+		return consoleModIDs
+	}
+	return consolePluginNames
+}
 
 type jarSum struct {
 	size int64
@@ -691,7 +841,8 @@ func (s *Server) matchedRecords(jars map[string]jarEntry) map[string]AddedPlugin
 
 // Plugins returns the Plugins tab of a Java server.
 func (s *Server) Plugins() (PluginsView, error) {
-	if !s.isJava() || !runsPlugins(s.Loader()) {
+	loader := s.Loader()
+	if !s.isJava() || !runsJars(loader) {
 		return PluginsView{}, errNotJavaPlugins
 	}
 	jars, err := s.pluginJars()
@@ -700,11 +851,11 @@ func (s *Server) Plugins() (PluginsView, error) {
 	}
 	added := s.matchedRecords(jars)
 	s.mu.Lock()
-	v := PluginsView{Plugins: []InstalledPlugin{}, Minecraft: s.meta.Version, Running: s.cmd != nil}
+	v := PluginsView{Kind: jarWord(loader) + "s", Loader: loader, Plugins: []InstalledPlugin{}, Minecraft: s.meta.Version, Running: s.cmd != nil}
 	v.RestartNeeded = s.cmd != nil && s.pluginsChanged.After(s.startedAt)
 	s.mu.Unlock()
 	for file, j := range jars {
-		p := InstalledPlugin{File: file, Enabled: j.enabled, Console: j.console, Name: j.name, Version: j.version, Needs: j.depends}
+		p := InstalledPlugin{File: file, Enabled: j.enabled, Console: j.console, Key: j.id, Name: j.name, Version: j.version, Needs: j.depends}
 		if p.Name == "" {
 			p.Name = strings.TrimSuffix(file, filepath.Ext(file))
 		}
@@ -729,7 +880,7 @@ func (s *Server) Plugins() (PluginsView, error) {
 // pluginsEditable says whether plugins can be changed now, and returns the
 // server's Minecraft version (which installs and updates need to know).
 func (s *Server) pluginsEditable(needVersion bool) (string, error) {
-	if !s.isJava() || !runsPlugins(s.Loader()) {
+	if !s.isJava() || !runsJars(s.Loader()) {
 		return "", errNotJavaPlugins
 	}
 	if err := s.EditBlocked(); err != nil {
@@ -779,6 +930,7 @@ var unsafeFileChars = regexp.MustCompile(`[^A-Za-z0-9._+\-]+`)
 
 // pluginFileName makes a safe, unused file name for a download.
 func (s *Server) pluginFileName(name string, files map[string]bool, replacing string) string {
+	loader := s.Loader()
 	name = unsafeFileChars.ReplaceAllString(filepath.Base(name), "_")
 	name = strings.TrimLeft(name, ".")
 	if !strings.HasSuffix(strings.ToLower(name), ".jar") {
@@ -788,12 +940,12 @@ func (s *Server) pluginFileName(name string, files map[string]bool, replacing st
 		name = name[len(name)-100:]
 	}
 	if name == ".jar" || name == "" {
-		name = "plugin.jar"
+		name = jarWord(loader) + ".jar"
 	}
 	base := strings.TrimSuffix(name, ".jar")
 	for i := 2; ; i++ {
 		_, taken := files[name]
-		if (!taken || name == replacing) && !isConsolePluginFile(name) {
+		if (!taken || name == replacing) && !isConsoleJar(name, loader) {
 			return name
 		}
 		name = fmt.Sprintf("%s-%d.jar", base, i)
@@ -804,6 +956,7 @@ func (s *Server) pluginFileName(name string, files map[string]bool, replacing st
 type planned struct {
 	f    pluginFile
 	tmp  string
+	id   string // its own ID (a plugin's name)
 	name string // its own name
 	sum  string // SHA-256
 	For  string
@@ -834,26 +987,28 @@ func (p *pluginPlan) discard() {
 // yet. Nothing in plugins/ changes. replacing is the file an update
 // replaces.
 func (s *Server) planPlugin(ctx context.Context, root pluginFile, minecraft, replacing string) (*pluginPlan, error) {
+	loader := s.Loader()
+	word := jarWord(loader)
 	jars, err := s.pluginJars()
 	if err != nil {
 		return nil, err
 	}
-	present := map[string]jarEntry{} // by its own name, lower case
+	present := map[string]jarEntry{} // by its own ID, lower case
 	for _, j := range jars {
-		if j.name != "" && j.file != replacing {
-			present[strings.ToLower(j.name)] = j
+		if j.id != "" && j.file != replacing {
+			present[strings.ToLower(j.id)] = j
 		}
 	}
 	records := s.matchedRecords(jars)
 	plan := &pluginPlan{}
 	visited := map[string]bool{}
-	plannedNames := map[string]bool{} // own names
+	plannedNames := map[string]bool{} // own IDs
 	var visit func(f pluginFile, forTitle string, depth int) error
 	visit = func(f pluginFile, forTitle string, depth int) error {
 		visited[f.Source+"/"+strings.ToLower(f.ID)] = true
 		dep := forTitle != ""
 		if depth > 6 {
-			return errors.New("its plugins need too many other plugins")
+			return fmt.Errorf("its %ss need too many other %ss", word, word)
 		}
 		if dep {
 			for _, a := range records {
@@ -875,11 +1030,11 @@ func (s *Server) planPlugin(ctx context.Context, root pluginFile, minecraft, rep
 				os.Remove(tmp)
 			}
 		}()
-		if it.name, _, err = pluginInfo(tmp); err != nil {
+		if it.id, it.name, _, _, err = jarMeta(tmp, loader); err != nil {
 			return fmt.Errorf("%s: %w", f.Title, err)
 		}
-		key := strings.ToLower(it.name)
-		if console, ok := consolePluginNames[key]; ok {
+		key := strings.ToLower(it.id)
+		if console, ok := consoleNames(loader)[key]; ok {
 			if !dep {
 				return fmt.Errorf("%s is part of console support, which the panel keeps installed (Settings, Console players)", it.name)
 			}
@@ -922,9 +1077,9 @@ func (s *Server) planPlugin(ctx context.Context, root pluginFile, minecraft, rep
 			if visited[n.Source+"/"+strings.ToLower(n.ID)] {
 				continue
 			}
-			nf, err := s.m.latestPlugin(ctx, n.Source, n.ID, minecraft)
+			nf, err := s.m.latestPlugin(ctx, n.Source, n.ID, minecraft, loader)
 			if err != nil {
-				return fmt.Errorf("%s needs another plugin that can't be installed: %w", f.Title, err)
+				return fmt.Errorf("%s needs another %s that can't be installed: %w", f.Title, word, err)
 			}
 			if err := visit(nf, f.Title, depth+1); err != nil {
 				return err
@@ -968,11 +1123,12 @@ func (s *Server) commitPlugins(plan *pluginPlan, replacing string) error {
 	}
 	for _, it := range plan.items {
 		for _, j := range jars {
-			if j.file != replacing && strings.EqualFold(j.name, it.name) {
+			if j.file != replacing && strings.EqualFold(j.id, it.id) {
 				return fmt.Errorf("%s was added meanwhile; try again", it.name)
 			}
 		}
 	}
+	word := jarWord(s.Loader())
 	if err := os.MkdirAll(s.pluginsDir(), 0o755); err != nil {
 		return err
 	}
@@ -1048,11 +1204,11 @@ func (s *Server) commitPlugins(plan *pluginPlan, replacing string) error {
 			what += " (" + it.For + " needs it)"
 		}
 		if replacing != "" && it.For == "" {
-			s.say("Updated the plugin " + what + ". The new version starts the next time the server does.")
+			s.say("Updated the " + word + " " + what + ". The new version starts the next time the server does.")
 		} else {
-			s.say("Installed the plugin " + what + ". It starts the next time the server does.")
+			s.say("Installed the " + word + " " + what + ". It starts the next time the server does.")
 		}
-		s.m.log.Info("plugin installed", "id", s.meta.ID, "plugin", it.name, "version", it.f.Version, "source", it.f.Source)
+		s.m.log.Info(word+" installed", "id", s.meta.ID, word, it.name, "version", it.f.Version, "source", it.f.Source)
 	}
 	for _, n := range plan.notes {
 		s.say(n)
@@ -1082,11 +1238,12 @@ func (s *Server) InstallPlugin(source, id string) (string, error) {
 	defer s.m.work.Done()
 	ctx, cancel := context.WithTimeout(s.m.ctx, 5*time.Minute)
 	defer cancel()
-	f, err := s.m.latestPlugin(ctx, source, id, minecraft)
+	loader := s.Loader()
+	f, err := s.m.latestPlugin(ctx, source, id, minecraft, loader)
 	if err != nil {
 		return "", err
 	}
-	s.say(fmt.Sprintf("Downloading the plugin %s %s…", f.Title, f.Version))
+	s.say(fmt.Sprintf("Downloading the %s %s %s…", jarWord(loader), f.Title, f.Version))
 	plan, err := s.planPlugin(ctx, f, minecraft, "")
 	if err != nil {
 		return "", err
@@ -1111,8 +1268,8 @@ type pluginUpdateCache struct {
 	file map[string]pluginFile
 }
 
-func (m *Manager) cachedLatestPlugin(ctx context.Context, source, id, minecraft string) (pluginFile, error) {
-	key := source + "/" + strings.ToLower(id) + "/" + minecraft
+func (m *Manager) cachedLatestPlugin(ctx context.Context, source, id, minecraft, loader string) (pluginFile, error) {
+	key := source + "/" + strings.ToLower(id) + "/" + minecraft + "/" + modrinthLoader(loader)
 	c := &m.pluginUpdates
 	c.mu.Lock()
 	if f, ok := c.file[key]; ok && time.Since(c.at[key]) < versionCheckEvery {
@@ -1120,7 +1277,7 @@ func (m *Manager) cachedLatestPlugin(ctx context.Context, source, id, minecraft 
 		return f, nil
 	}
 	c.mu.Unlock()
-	f, err := m.latestPlugin(ctx, source, id, minecraft)
+	f, err := m.latestPlugin(ctx, source, id, minecraft, loader)
 	if err != nil {
 		return f, err
 	}
@@ -1137,7 +1294,8 @@ func (m *Manager) cachedLatestPlugin(ctx context.Context, source, id, minecraft 
 // release for the server's Minecraft version (file → new version).
 func (s *Server) PluginUpdates(ctx context.Context) map[string]string {
 	out := map[string]string{}
-	if !s.isJava() || !runsPlugins(s.Loader()) {
+	loader := s.Loader()
+	if !s.isJava() || !runsJars(loader) {
 		return out
 	}
 	jars, err := s.pluginJars()
@@ -1156,7 +1314,7 @@ func (s *Server) PluginUpdates(ctx context.Context) map[string]string {
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
-			f, err := s.m.cachedLatestPlugin(ctx, a.Source, a.ID, minecraft)
+			f, err := s.m.cachedLatestPlugin(ctx, a.Source, a.ID, minecraft, loader)
 			if err != nil || f.Version == a.Version || f.Hash == "" {
 				return
 			}
@@ -1208,9 +1366,9 @@ func (s *Server) UpdatePlugin(file string) (string, error) {
 	}
 	a, ok := s.matchedRecords(map[string]jarEntry{file: j})[file]
 	if !ok {
-		return "", errors.New("that plugin was added by hand (or changed since), so the panel can't update it; remove it and install it here instead")
+		return "", fmt.Errorf("that %s was added by hand (or changed since), so the panel can't update it; remove it and install it here instead", jarWord(s.Loader()))
 	}
-	f, err := s.m.latestPlugin(ctx, a.Source, a.ID, minecraft)
+	f, err := s.m.latestPlugin(ctx, a.Source, a.ID, minecraft, s.Loader())
 	if err != nil {
 		return "", err
 	}
@@ -1218,7 +1376,7 @@ func (s *Server) UpdatePlugin(file string) (string, error) {
 		s.say(a.Title + " is already on its newest version (" + a.Version + ").")
 		return a.Version, nil
 	}
-	s.say(fmt.Sprintf("Downloading the plugin %s %s…", f.Title, f.Version))
+	s.say(fmt.Sprintf("Downloading the %s %s %s…", jarWord(s.Loader()), f.Title, f.Version))
 	plan, err := s.planPlugin(ctx, f, minecraft, file)
 	if err != nil {
 		return "", err
@@ -1313,6 +1471,10 @@ func (s *Server) RemovePlugin(file string) error {
 	if name == "" {
 		name = file
 	}
-	s.say("Removed the plugin " + name + ". Its settings folder in plugins/ is kept. The server keeps running it until it restarts.")
+	if runsMods(s.Loader()) {
+		s.say("Removed the mod " + name + ". Its settings in config/ are kept. The server keeps running it until it restarts.")
+	} else {
+		s.say("Removed the plugin " + name + ". Its settings folder in plugins/ is kept. The server keeps running it until it restarts.")
+	}
 	return nil
 }

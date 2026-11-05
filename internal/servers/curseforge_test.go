@@ -145,6 +145,10 @@ func newFakeCurseForge(t *testing.T) *fakeCurseForge {
 	addMod(301, 12, "Shiny Textures", true, file(3011, 301, "shiny.zip", []byte("textures"), nil))
 	addMod(302, 6, "Minimap", true, file(3021, 302, "minimap.jar", []byte("minimap"), map[string]any{"gameVersions": []string{"1.21.4", "Client"}}))
 	addMod(303, 6, "Kept Mod", false, file(3031, 303, "kept.jar", []byte("kept"), map[string]any{"downloadUrl": nil}))
+	// For the Mods tab: a mod with a Fabric file and a newer Forge one.
+	addMod(304, 6, "Pipes", true,
+		file(3041, 304, "pipes-fabric.jar", modJar("fabric", "pipes", "Pipes", "2.0"), map[string]any{"gameVersions": []string{"1.21.4", "Fabric", "Server"}}),
+		file(3042, 304, "pipes-forge.jar", modJar("forge", "pipes", "Pipes", "2.1"), map[string]any{"gameVersions": []string{"1.21.4", "Forge"}, "fileDate": "2026-10-05T00:00:00Z"}))
 	manifest := func(name string) string {
 		b, _ := json.Marshal(map[string]any{"manifestType": "minecraftModpack", "manifestVersion": 1, "name": name, "version": "2.0", "overrides": "overrides",
 			"minecraft": map[string]any{"version": "1.21.4", "modLoaders": []map[string]any{{"id": "fabric-0.16.9", "primary": true}}},
