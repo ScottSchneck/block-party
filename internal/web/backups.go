@@ -14,6 +14,8 @@ func (s *Server) backupRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/servers/{id}/backups/{name}", s.withServer(levelCare, s.downloadBackup))
 	mux.HandleFunc("DELETE /api/servers/{id}/backups/{name}", s.withServer(levelCare, s.deleteBackup))
 	mux.HandleFunc("POST /api/servers/{id}/backups/{name}/restore", s.withServer(levelCare, s.restoreBackup))
+	mux.HandleFunc("GET /api/servers/{id}/backups/{name}/worlds", s.withServer(levelCare, s.backupWorlds))
+	mux.HandleFunc("POST /api/servers/{id}/backups/{name}/worlds/{world}/restore", s.withServer(levelCare, s.restoreWorld))
 }
 
 func (s *Server) listBackups(w http.ResponseWriter, r *http.Request, srv *servers.Server) {
@@ -73,6 +75,25 @@ func (s *Server) deleteBackup(w http.ResponseWriter, r *http.Request, srv *serve
 
 func (s *Server) restoreBackup(w http.ResponseWriter, r *http.Request, srv *servers.Server) {
 	if err := s.did(r, srv, srv.Restore(r.PathValue("name")), "restored the backup "+r.PathValue("name")); err != nil {
+		writeError(w, http.StatusConflict, err)
+		return
+	}
+	writeJSON(w, http.StatusAccepted, srv.Status())
+}
+
+// backupWorlds lists the worlds in a backup, to put one back.
+func (s *Server) backupWorlds(w http.ResponseWriter, r *http.Request, srv *servers.Server) {
+	worlds, err := srv.BackupWorlds(r.PathValue("name"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"worlds": worlds})
+}
+
+func (s *Server) restoreWorld(w http.ResponseWriter, r *http.Request, srv *servers.Server) {
+	name, world := r.PathValue("name"), r.PathValue("world")
+	if err := s.did(r, srv, srv.RestoreWorld(name, world), "put back the world "+world+" from the backup "+name); err != nil {
 		writeError(w, http.StatusConflict, err)
 		return
 	}

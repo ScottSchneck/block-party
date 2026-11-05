@@ -246,6 +246,7 @@ fieldset > :nth-last-child(1 of :not([hidden])) { margin-bottom: 0; }
 .people .who small { color: var(--muted); display: block; font-size: 12px; }
 .people button, .people a.button { min-height: 34px; padding: 0 12px; font-size: 13px; }
 .people .empty { color: var(--muted); font-size: 14px; }
+.people li .world-pick { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 6px 0 0; }
 .card.attention .people .who small { color: var(--warn); }
 .card.attention .people li { border-top-color: var(--warn-line); }
 .card.attention button.primary { background: var(--warn-btn); border-color: var(--warn-btn); color: var(--on-warn-btn); }

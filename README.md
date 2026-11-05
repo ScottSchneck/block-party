@@ -690,6 +690,11 @@ and the settings files (`server.properties`, allowlist, permissions).
   restore", the last 3 are kept), puts the backup back and starts the server
   again if it was running. Restoring a "Before an update" backup also puts
   back the server version from before that update.
+- **One world…** puts back just one world from a backup: pick it, and the
+  rest of the server (its other worlds, settings and allowlist) stays as it
+  is. That world as it is now is backed up first ("Before a restore"), and
+  the server only stops for it if it's the world being played. A Java
+  world comes back with its Nether and End.
 - Set `TZ` (for example `-e TZ=America/Denver`) so "04:00" is your 4 am; the
   container is on UTC otherwise.
 

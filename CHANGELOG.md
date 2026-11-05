@@ -39,6 +39,11 @@
   Notifications). Discord messages are now coloured cards, red for crashes
   and failed backups, amber for join requests, green for players, blue for
   updates.
+- **Put back one world from a backup.** On the Backups tab, **One world…**
+  lists a backup's worlds; pick one and only it goes back, with everything
+  else on the server left as it is. The world as it is now is backed up
+  first, and the server keeps running unless it's playing that world. A
+  Java world comes back with its Nether and End.
 
 ## 1.6.1
 

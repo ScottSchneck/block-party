@@ -263,6 +263,11 @@ func (m *Manager) Load() error {
 				m.log.Warn("a restore was interrupted, so it was undone; the server is as it was before", "id", id)
 			}
 		}
+		if id, ok := strings.CutPrefix(e.Name(), ".restore-world-"); ok { // one world (worldrestore.go)
+			if recoverRestore(filepath.Join(m.serversDir(), e.Name()), filepath.Join(m.serversDir(), id, "worlds")) {
+				m.log.Warn("putting back a world was interrupted, so it was undone", "id", id)
+			}
+		}
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()

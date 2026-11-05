@@ -1780,6 +1780,8 @@ function renderBackups(v, id) {
   }
   backupsFor = id;
   const care = access(serverList.find((x) => x.id === id)) >= CARE;
+  const srvNow = serverList.find((x) => x.id === id);
+  const oneWorld = !!srvNow && srvNow.type !== "hytale" && srvNow.loader !== "velocity"; // put back one world
   $("plan-form").hidden = !care;
   for (const x of ["plan-every", "plan-at"]) $(x).disabled = false;
   updatePlanForm();
@@ -1814,12 +1816,48 @@ function renderBackups(v, id) {
           backupsCall(() => post(`${sid()}/backups/${enc(b.name)}/restore`));
         }
       }, "", v.running),
+      oneWorld && b.kind !== "before-delete" ? btn("One world…", () => pickWorld(b), "", v.running) : null,
       btn("Delete", () => {
         if (confirm(`Delete the backup from ${when}? This can't be undone.`)) {
           backupsCall(() => del(`${sid()}/backups/${enc(b.name)}`));
         }
-      }, "danger", v.running));
+      }, "danger", v.running),
+      worldPick && worldPick.name === b.name ? worldPicker(b, when) : null);
   }) : [emptyRow(v.running ? "Making the first backup…" : "No backups yet.")]));
+}
+
+// worldPick is the backup whose worlds are listed under its row, to put
+// just one back ({name, id, worlds, error}); it stays open while the list
+// refreshes.
+let worldPick = null;
+
+async function pickWorld(b) {
+  if (worldPick && worldPick.name === b.name) { worldPick = null; loadBackups(); return; }
+  const id = selected;
+  worldPick = { name: b.name, id, worlds: null };
+  loadBackups();
+  try {
+    const r = await api(`${sid()}/backups/${encodeURIComponent(b.name)}/worlds`);
+    if (worldPick && worldPick.name === b.name) worldPick.worlds = r.worlds || [];
+  } catch (err) { if (worldPick && worldPick.name === b.name) worldPick.error = err.message; }
+  if (id === selected) loadBackups();
+}
+
+function worldPicker(b, when) {
+  const enc = encodeURIComponent;
+  const p = worldPick;
+  if (p.id !== selected) return null;
+  if (p.error) return el("div", { class: "world-pick" }, el("span", { class: "error" }, p.error));
+  if (!p.worlds) return el("div", { class: "world-pick" }, el("span", { class: "muted small" }, "Looking at the backup…"));
+  const s = serverList.find((x) => x.id === selected);
+  return el("div", { class: "world-pick" },
+    el("span", { class: "muted small" }, p.worlds.length ? "Put back just this world (the rest of the server stays as it is):" : "This backup has no worlds."),
+    ...p.worlds.map((w) => btn(w, () => {
+      const note = s && s.state === "running" ? " If the server is playing it, it stops for a moment and starts again." : "";
+      if (!confirm(`Put the world ${w} back as it was on ${when}?\n\nThe world as it is now is backed up first, so you can undo this. Other worlds, settings and players stay as they are.${note}`)) return;
+      worldPick = null;
+      backupsCall(() => post(`${sid()}/backups/${enc(b.name)}/worlds/${enc(w)}/restore`));
+    })));
 }
 
 function updatePlanForm() {

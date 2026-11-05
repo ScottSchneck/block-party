@@ -1061,6 +1061,12 @@ func recoverRestore(old, dir string) bool {
 // extractTarGz unpacks a backup into dir, refusing anything that would land
 // outside it. Only folders and plain files are unpacked.
 func extractTarGz(ctx context.Context, r io.Reader, dir string) error {
+	return extractTarGzOnly(ctx, r, dir, nil)
+}
+
+// extractTarGzOnly is extractTarGz for the paths keep says yes to (all,
+// if keep is nil); paths are slash-separated and relative.
+func extractTarGzOnly(ctx context.Context, r io.Reader, dir string, keep func(string) bool) error {
 	gz, err := gzip.NewReader(r)
 	if err != nil {
 		return err
@@ -1087,6 +1093,9 @@ func extractTarGz(ctx context.Context, r io.Reader, dir string) error {
 		}
 		if base := filepath.Base(name); name == base && (base == metaFile || base == ".update-incomplete") {
 			continue // the panel's own records stay as they are
+		}
+		if keep != nil && !keep(filepath.ToSlash(name)) {
+			continue
 		}
 		target := filepath.Join(dir, name)
 		switch hdr.Typeflag {
