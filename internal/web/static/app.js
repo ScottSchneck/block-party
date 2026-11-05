@@ -3069,6 +3069,43 @@ function pluginWords(v) {
   $("plugins-restart-text").textContent = `Restart the server to use the ${mods ? "mod" : "plugin"} changes. Players are disconnected for a moment.`;
 }
 
+// loadModpack shows a modpack server's pack, and its update.
+async function loadModpack(id) {
+  const s = serverList.find((x) => x.id === id);
+  $("modpack-card").hidden = !(s && s.modpack);
+  if (!s || !s.modpack) return;
+  $("modpack-name").textContent = s.modpack;
+  $("modpack-newer").hidden = true;
+  $("modpack-actions").hidden = true;
+  $("modpack-note").textContent = "Checking for a newer version…";
+  try {
+    const v = await api(sid() + "/modpack");
+    if (id !== selected) return;
+    const site = siteNames[v.source] || "";
+    $("modpack-newer").textContent = v.newer ? v.newer + " is out" : "";
+    $("modpack-newer").hidden = !v.newer;
+    $("modpack-actions").hidden = !(v.newer && me.owner);
+    $("modpack-note").textContent = !v.source ? "Uploaded as a file, so it can't be updated from here."
+      : !v.updatable ? "This server was made before the panel could update modpacks, so it doesn't know which files are the pack's. To move to a newer version, make a new server from the modpack."
+      : v.problem ? v.problem
+      : v.newer ? `Update modpack backs up the whole server first, then puts in the new version from ${site}: its Minecraft version, loader, mods and settings. Worlds stay; files you changed, and mods you added here, are kept.` + (me.owner ? "" : " Only the owner can update it.")
+      : `Up to date with ${site}.`;
+  } catch (err) { if (id === selected) $("modpack-note").textContent = err.message; }
+}
+$("modpack-update").addEventListener("click", async (ev) => {
+  const s = serverList.find((x) => x.id === selected);
+  if (!s || !confirm(`Update ${s.modpack} to ${$("modpack-newer").textContent.replace(/ is out$/, "")}? The server stops, is backed up, and starts again once it's done. Players need the new version in their game too.`)) return;
+  const b = ev.currentTarget;
+  b.disabled = true;
+  try {
+    await post(sid() + "/modpack/update");
+    $("modpack-actions").hidden = true;
+    $("modpack-note").textContent = "Updating: follow it in the Console tab.";
+  } catch (err) { showPluginsError(err); }
+  b.disabled = false;
+  refresh();
+});
+
 function resetPlugins() {
   pluginsFor = null;
   pluginsView = null;
@@ -3092,6 +3129,7 @@ async function loadPlugins() {
     const first = pluginsFor !== id;
     pluginsFor = id;
     renderPlugins(v);
+    if (first) loadModpack(id);
     showPluginsError(null);
     if (first) {
       api(sid() + "/plugins/updates").then((u) => {

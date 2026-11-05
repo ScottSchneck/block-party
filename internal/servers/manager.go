@@ -174,6 +174,12 @@ type Meta struct {
 	// PackSource: the modpack still to install ("modrinth:<project>" or
 	// "file:<upload>"), until it's in.
 	PackSource string `json:"packSource,omitempty"`
+	// PackOrigin is where the modpack came from ("modrinth:<project>" or
+	// "curseforge:<project>"; "" for an uploaded one), and PackVersion the
+	// version installed (Modrinth's version ID, CurseForge's file ID), for
+	// modpack updates.
+	PackOrigin  string `json:"packOrigin,omitempty"`
+	PackVersion string `json:"packVersion,omitempty"`
 	// CurseForgePacks are the Bedrock packs installed from CurseForge, by
 	// pack ID, so the Add-ons tab can offer their updates.
 	CurseForgePacks map[string]CFPackRecord `json:"curseForgePacks,omitempty"`

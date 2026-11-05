@@ -156,7 +156,10 @@ type Server struct {
 	hytaleSess        hytaleSession // for the next start of a Hytale server
 	hytaleSessErr     error
 	hytaleSessAt      time.Time
-	updatedConsoles   bool        // the update running installed new console plugins (for its notification)
+	updatedConsoles   bool      // the update running installed new console plugins (for its notification)
+	packUpdate        bool      // the update running moves the modpack to its newest version
+	packCheck         packCheck // the newest version of its modpack, last asked
+	packCheckAt       time.Time
 	pluginsChanged    time.Time   // when a Java plugin was last added, updated, removed or turned on or off
 	jarSums           sync.Map    // plugin jar path -> jarSum (SHA-256 while unchanged)
 	javaRetry         *time.Timer // sends queued allowlist changes again after a failed lookup
@@ -866,13 +869,13 @@ func (s *Server) installAndStart(extra []string) {
 // Update backs the server up, downloads the current version and starts it
 // again if it was running and nobody pressed Stop meanwhile. It returns
 // straight away; follow the console.
-func (s *Server) Update() error { return s.startUpdate(false) }
+func (s *Server) Update() error { return s.startUpdate(false, false) }
 
 // UpdateOvernight is Update started by overnight upkeep (its result is
 // sent as a notification).
-func (s *Server) UpdateOvernight() error { return s.startUpdate(true) }
+func (s *Server) UpdateOvernight() error { return s.startUpdate(true, false) }
 
-func (s *Server) startUpdate(auto bool) error {
+func (s *Server) startUpdate(auto, pack bool) error {
 	if !s.m.beginWork() {
 		return errShuttingDown
 	}
@@ -884,6 +887,7 @@ func (s *Server) startUpdate(auto bool) error {
 	}
 	s.busy = true
 	s.autoUpdating = auto
+	s.packUpdate = pack
 	s.updatedConsoles = false
 	versionBefore, buildBefore := s.meta.Version, s.meta.Build
 	wasRunning := s.cmd != nil || s.restart != nil
@@ -904,6 +908,7 @@ func (s *Server) startUpdate(auto bool) error {
 		err := s.update()
 		s.mu.Lock()
 		s.busy = false
+		s.packUpdate = false
 		var partial *partialUpdateError
 		switch {
 		case errors.As(err, &partial):

@@ -85,7 +85,7 @@ func cleanRel(p string) (string, error) {
 // hiddenFile: the panel's own records, never shown or touched.
 func hiddenFile(rel string) bool {
 	base := path.Base(rel)
-	return base == metaFile || base == metaFile+".tmp"
+	return base == metaFile || base == metaFile+".tmp" || base == modpackRecordFile || base == modpackRecordFile+".tmp"
 }
 
 // codeFile: files and folders that run code on the computer: the server

@@ -19,6 +19,27 @@ func (s *Server) javaTypeRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/java/versions", s.javaVersions)
 	mux.HandleFunc("GET /api/modpacks", ownerOnly(s.searchModpacks))
 	mux.HandleFunc("POST /api/modpacks/upload", ownerOnly(s.uploadModpack))
+	mux.HandleFunc("GET /api/servers/{id}/modpack", s.withServer(levelCare, s.modpackInfo))
+	mux.HandleFunc("POST /api/servers/{id}/modpack/update", s.withServer(levelOwner, s.updateModpack))
+}
+
+// modpackInfo: a modpack server's pack, and whether a newer one is out.
+func (s *Server) modpackInfo(w http.ResponseWriter, r *http.Request, srv *servers.Server) {
+	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+	defer cancel()
+	writeJSON(w, http.StatusOK, srv.ModpackInfo(ctx))
+}
+
+// updateModpack moves a modpack server to its pack's newest version (only
+// the owner: a new version brings new mods, which run their own code).
+func (s *Server) updateModpack(w http.ResponseWriter, r *http.Request, srv *servers.Server) {
+	before := srv.Status().Modpack
+	if err := srv.UpdateModpack(); err != nil {
+		writeError(w, http.StatusConflict, err)
+		return
+	}
+	s.note(r, srv, "started updating the modpack "+before)
+	writeJSON(w, http.StatusAccepted, map[string]bool{"started": true})
 }
 
 // javaVersions lists the Minecraft versions a Java server type can run.

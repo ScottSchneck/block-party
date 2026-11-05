@@ -411,10 +411,14 @@ func (s *Server) installJava(update bool) error {
 		return s.installConsoles(ctx, true)
 	}
 	s.mu.Lock()
-	pack := s.meta.PackSource
+	pack, packUpdate := s.meta.PackSource, false
+	if update && s.packUpdate && s.meta.PackOrigin != "" {
+		pack, packUpdate = s.meta.PackOrigin, true // Update modpack
+	}
+	s.packUpdate = false
 	s.mu.Unlock()
 	if pack != "" {
-		return s.installModpack(ctx)
+		return s.installModpack(ctx, pack, packUpdate)
 	}
 	if loader != LoaderPaper {
 		return s.installLoader(ctx, update)

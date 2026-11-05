@@ -12,6 +12,13 @@
   CurseForge remembers where it came from; the Add-ons tab shows **Update
   available** when there's a newer file for the server's Minecraft version,
   and **Update** installs it over the old one.
+- **Modpack updates.** A server made from a Modrinth or CurseForge modpack
+  shows when the pack has a newer version, on its Mods tab. **Update
+  modpack** backs up the whole server first, then puts in the new version's
+  Minecraft, loader, mods and settings. Worlds, files changed by hand and
+  mods added yourself are kept; the old version's files the new one doesn't
+  have are removed. This works for servers made from now on (the panel
+  needs to know which files the pack put in).
 
 ## 1.6.1
 

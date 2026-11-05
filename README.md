@@ -385,6 +385,16 @@ them in the **Files** tab. A modpack server gets the Minecraft version,
 loader and mods its pack asks for (only the pack's server-side files, each
 checked against its checksum).
 
+**Modpack updates.** The Mods tab of a server made from a Modrinth or
+CurseForge modpack shows when the pack has a newer version, and **Update
+modpack** (owner only) moves to it: the whole server folder is backed up
+first, then the new version's Minecraft, loader, mods and settings go in.
+The panel remembers what each version of the pack put where, so worlds,
+files you changed by hand and mods you added yourself are kept, and the old
+version's files the new one doesn't have are removed. Players need the new
+version of the pack in their game too. (Servers made before 1.7.0, and
+packs uploaded as a file, can't be updated this way.)
+
 A server on a version you chose, and every modded one, stays on its
 Minecraft version: **Update** gets the newest build of the same version
 (Purpur build, Fabric loader, Forge or NeoForge), since mods only work on

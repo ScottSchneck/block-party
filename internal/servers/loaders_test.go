@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -51,6 +52,7 @@ type fakeLoaders struct {
 	purpurB    string
 	geyserFor  []string // Minecraft versions Geyser for Fabric supports
 	packs      map[string][]byte
+	packVer    map[string]string   // a pack's version ("1.0" if not set)
 	mods       map[string]*fakeMod // Modrinth mods with real jars, by project ID
 }
 
@@ -172,7 +174,11 @@ func newFakeLoaders(t *testing.T) *fakeLoaders {
 			id := strings.TrimSuffix(strings.TrimPrefix(p, "/modrinth/project/"), "/version")
 			pack := f.packs[id]
 			sum := sha512.Sum512(pack)
-			enc.Encode([]map[string]any{{"name": "Pack 1.0", "version_number": "1.0", "version_type": "release", "loaders": []string{"fabric"},
+			ver := f.packVer[id]
+			if ver == "" {
+				ver = "1.0"
+			}
+			enc.Encode([]map[string]any{{"id": id + "-" + ver, "name": "Pack " + ver, "version_number": ver, "version_type": "release", "loaders": []string{"fabric"},
 				"files": []map[string]any{{"url": f.srv.URL + "/packfile/" + id, "filename": id + ".mrpack", "primary": true, "hashes": map[string]string{"sha512": hexOf(sum[:])}}}}})
 		case strings.HasPrefix(p, "/packfile/"):
 			w.Write(f.packs[strings.TrimPrefix(p, "/packfile/")])
@@ -372,11 +378,16 @@ func TestJavaServerTypes(t *testing.T) {
 
 // mrpack makes a modpack file.
 func mrpack(t *testing.T, base string, files []map[string]any, extra map[string]string) []byte {
+	return mrpackV(t, "1.0", "0.16.5", files, extra)
+}
+
+// mrpackV makes a version of a modpack file, on a Fabric loader version.
+func mrpackV(t *testing.T, version, fabric string, files []map[string]any, extra map[string]string) []byte {
 	t.Helper()
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
-	idx, _ := json.Marshal(map[string]any{"formatVersion": 1, "game": "minecraft", "versionId": "1.0", "name": "Test Pack",
-		"files": files, "dependencies": map[string]string{"minecraft": "1.21.1", "fabric-loader": "0.16.5"}})
+	idx, _ := json.Marshal(map[string]any{"formatVersion": 1, "game": "minecraft", "versionId": version, "name": "Test Pack",
+		"files": files, "dependencies": map[string]string{"minecraft": "1.21.1", "fabric-loader": fabric}})
 	w, _ := zw.Create("modrinth.index.json")
 	w.Write(idx)
 	for name, body := range extra {
@@ -438,6 +449,51 @@ func TestModpackServer(t *testing.T) {
 	s.mu.Unlock()
 	if left != "" {
 		t.Error("the pack should be marked installed")
+	}
+
+	// Modpack updates.
+	if v := s.ModpackInfo(t.Context()); !v.Updatable || v.Source != "modrinth" || v.Newer != "" || v.Modpack != "Test Pack 1.0" {
+		t.Errorf("up to date: %+v", v)
+	}
+	os.WriteFile(filepath.Join(s.dir(), "config", "pack.toml"), []byte("a = mine"), 0o644) // changed by hand
+	os.WriteFile(filepath.Join(s.dir(), "mods", "mine.jar"), []byte("mine"), 0o644)        // added by hand
+	os.MkdirAll(filepath.Join(s.dir(), "worlds", "world"), 0o755)
+	os.WriteFile(filepath.Join(s.dir(), "worlds", "world", "level.dat"), []byte("world"), 0o644)
+	f.mu.Lock()
+	f.packs["pack1"] = mrpackV(t, "2.0", "0.16.6", []map[string]any{
+		packEntry(f.srv.URL, "mods/lithium2.jar", "lithium2", "required"), // lithium.jar dropped
+	}, map[string]string{"overrides/config/pack.toml": "a = 3", "server-overrides/config/pack.toml": "a = 4", "overrides/config/new.toml": "n = 1", "overrides/mods/extra.jar": "extra 2"})
+	f.packVer = map[string]string{"pack1": "2.0"}
+	f.mu.Unlock()
+	s.mu.Lock()
+	s.packCheckAt = time.Time{}
+	s.mu.Unlock()
+	if v := s.ModpackInfo(t.Context()); v.Newer != "Pack 2.0" {
+		t.Fatalf("newer: %+v", v)
+	}
+	if err := s.UpdateModpack(); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, s, "pack updated", func(st Status) bool { return st.Modpack == "Test Pack 2.0" && st.State == StateRunning })
+	if st := s.Status(); st.LoaderVersion != "0.16.6" {
+		t.Errorf("the pack's loader: %+v", st)
+	}
+	for rel, want := range map[string]string{"mods/lithium2.jar": "packmod lithium2", "mods/extra.jar": "extra 2", "config/new.toml": "n = 1",
+		"config/pack.toml": "a = mine", "mods/mine.jar": "mine", "worlds/world/level.dat": "world"} {
+		if got, _ := os.ReadFile(filepath.Join(s.dir(), rel)); string(got) != want {
+			t.Errorf("%s: %q, want %q", rel, got, want)
+		}
+	}
+	if fileExists(filepath.Join(s.dir(), "mods", "lithium.jar")) {
+		t.Error("the old version's mod is still there")
+	}
+	if b := s.Backups(); len(b.Backups) == 0 || b.Backups[0].Kind != "before-update" {
+		t.Errorf("no backup first: %+v", b)
+	}
+	waitConsole(t, s, "Kept 1 file changed by hand")
+	waitConsole(t, s, "Fabric 0.16.6 for Minecraft 1.21.1 is installed")
+	if v := s.ModpackInfo(t.Context()); v.Newer != "" {
+		t.Errorf("after the update: %+v", v)
 	}
 
 	st, err = m.CreateModpack("Evil", 2048, ModpackSource{Project: "pack2"})

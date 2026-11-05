@@ -724,7 +724,7 @@ func serverPackSkip(rel string) bool {
 }
 
 // installCurseForgePack installs a new server from a CurseForge modpack.
-func (s *Server) installCurseForgePack(ctx context.Context, id int) error {
+func (s *Server) installCurseForgePack(ctx context.Context, id int, update bool) error {
 	mod, err := s.m.cfMod(ctx, id)
 	if err != nil {
 		return err
@@ -775,11 +775,7 @@ func (s *Server) installCurseForgePack(ctx context.Context, id int) error {
 	}
 	label := strings.TrimSpace(mf.Name + " " + mf.Version)
 	s.say(fmt.Sprintf("Modpack %s: Minecraft %s with %s %s, %d mods.", label, mf.Minecraft.Version, LoaderName(loader), lv, len(mf.Files)))
-	s.mu.Lock()
-	s.meta.Loader, s.meta.Version, s.meta.LoaderVersion, s.meta.KeepVersion, s.meta.Modpack = loader, mf.Minecraft.Version, lv, true, label
-	s.meta.NoConsoles = loader != LoaderFabric
-	s.mu.Unlock()
-	if err := s.saveMeta(); err != nil {
+	if err := s.setModpack(fmt.Sprintf("curseforge:%d", id), strconv.Itoa(f.ID), label, loader, mf.Minecraft.Version, lv, update); err != nil {
 		return err
 	}
 	if err := s.installLoader(ctx, false); err != nil {
@@ -790,12 +786,13 @@ func (s *Server) installCurseForgePack(ctx context.Context, id int) error {
 		return err
 	}
 	defer root.Close()
+	w := s.newPackWriter(root, update)
 
 	// The pack's server pack, when it has one, holds exactly what a server
 	// needs; otherwise the mods are fetched one by one.
 	usedServerPack := false
 	if f.ServerPackFileID > 0 {
-		if err := s.cfServerPack(ctx, root, id, f.ServerPackFileID); err != nil {
+		if err := s.cfServerPack(ctx, w, id, f.ServerPackFileID); err != nil {
 			s.say("Couldn't use the modpack's server pack (" + err.Error() + "); getting the mods one by one instead.")
 		} else {
 			usedServerPack = true
@@ -803,7 +800,7 @@ func (s *Server) installCurseForgePack(ctx context.Context, id int) error {
 	}
 	var blocked []string
 	if !usedServerPack {
-		if blocked, err = s.cfPackMods(ctx, root, mf); err != nil {
+		if blocked, err = s.cfPackMods(ctx, w, mf); err != nil {
 			return err
 		}
 	}
@@ -825,10 +822,13 @@ func (s *Server) installCurseForgePack(ctx context.Context, id int) error {
 			if zf.UncompressedSize64 > 1<<30 {
 				return fmt.Errorf("the modpack's %s is too big", rel)
 			}
-			if err := extractIntoRoot(root, zf, rel); err != nil {
+			if err := w.extract(zf, rel); err != nil {
 				return err
 			}
 		}
+	}
+	if err := w.finish(); err != nil {
+		return err
 	}
 	s.mu.Lock()
 	s.meta.PackSource = ""
@@ -847,7 +847,7 @@ func (s *Server) installCurseForgePack(ctx context.Context, id int) error {
 
 // cfServerPack downloads a modpack's server pack and copies in its files
 // (not its start scripts and jars: the panel starts the server its own way).
-func (s *Server) cfServerPack(ctx context.Context, root *os.Root, modID, fileID int) error {
+func (s *Server) cfServerPack(ctx context.Context, w *packWriter, modID, fileID int) error {
 	var res struct {
 		Data cfFile `json:"data"`
 	}
@@ -899,7 +899,7 @@ func (s *Server) cfServerPack(ctx context.Context, root *os.Root, modID, fileID 
 		if zf.UncompressedSize64 > 1<<30 {
 			return fmt.Errorf("its %s is too big", rel)
 		}
-		if err := extractIntoRoot(root, zf, rel); err != nil {
+		if err := w.extract(zf, rel); err != nil {
 			return err
 		}
 		count++
@@ -913,7 +913,7 @@ func (s *Server) cfServerPack(ctx context.Context, root *os.Root, modID, fileID 
 // cfPackMods downloads a modpack's mods (not client-only ones, texture
 // packs or shaders) into mods/. It returns the ones whose creators don't
 // allow other apps to download them.
-func (s *Server) cfPackMods(ctx context.Context, root *os.Root, mf cfManifest) ([]string, error) {
+func (s *Server) cfPackMods(ctx context.Context, w *packWriter, mf cfManifest) ([]string, error) {
 	var ids []int
 	var modIDs []int
 	for _, f := range mf.Files {
@@ -975,7 +975,7 @@ func (s *Server) cfPackMods(ctx context.Context, root *os.Root, mf cfManifest) (
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", name, err)
 		}
-		err = copyIntoRoot(root, tmp, "mods/"+base)
+		err = w.put(tmp, "mods/"+base)
 		os.Remove(tmp)
 		if err != nil {
 			return nil, err
