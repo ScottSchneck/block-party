@@ -39,6 +39,10 @@ type Pack struct {
 	NeedsBeta bool  `json:"needsBeta,omitempty"`
 	Size      int64 `json:"size"`
 	Missing   bool  `json:"missing,omitempty"` // turned on, but its files aren't in the world
+	// CurseForge is the CurseForge project it was installed from (0: it was
+	// uploaded), and Page its page there.
+	CurseForge int    `json:"curseforge,omitempty"`
+	Page       string `json:"page,omitempty"`
 }
 
 // PacksView is the add-ons of the server's current world.
@@ -381,6 +385,12 @@ func (s *Server) Packs() (PacksView, error) {
 		}
 		return strings.ToLower(a.Name) < strings.ToLower(b.Name)
 	})
+	records := s.cfPackRecords()
+	for i, pk := range v.Packs {
+		if r, ok := records[pk.UUID]; ok && r.Version == pk.Version && !pk.Missing {
+			v.Packs[i].CurseForge, v.Packs[i].Page = r.Mod, r.Page
+		}
+	}
 	return v, nil
 }
 

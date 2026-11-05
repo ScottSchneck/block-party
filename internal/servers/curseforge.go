@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 // CurseForge: Bedrock add-ons, texture packs and worlds for the Add-ons tab,
@@ -655,6 +656,7 @@ func (s *Server) InstallCurseForge(ctx context.Context, id int) (name string, re
 		return mod.Name, res, world, err
 	}
 	res, err = s.InstallPacks(ctx, file)
+	s.rememberCFPacks(id, page, f, res.Installed)
 	return mod.Name, res, world, err
 }
 
@@ -1139,4 +1141,135 @@ func (m *Manager) latestCurseForgeMod(ctx context.Context, id, minecraft, loader
 		}
 	}
 	return out, nil
+}
+
+// ---- updates for Bedrock packs from CurseForge ----
+
+// CFPackRecord is a Bedrock pack the panel installed from CurseForge: the
+// project and file it came from, and the pack's own version then (a pack
+// uploaded by hand since has another, and isn't the panel's any more).
+type CFPackRecord struct {
+	Mod     int    `json:"mod"`
+	File    int    `json:"file"`
+	Version string `json:"version"`
+	Page    string `json:"page,omitempty"`
+}
+
+func (s *Server) cfPackRecords() map[string]CFPackRecord {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make(map[string]CFPackRecord, len(s.meta.CurseForgePacks))
+	for k, v := range s.meta.CurseForgePacks {
+		out[k] = v
+	}
+	return out
+}
+
+// rememberCFPacks records the packs an install from CurseForge put in.
+func (s *Server) rememberCFPacks(mod int, page string, f cfFile, packs []Pack) {
+	if len(packs) == 0 {
+		return
+	}
+	s.mu.Lock()
+	if s.meta.CurseForgePacks == nil {
+		s.meta.CurseForgePacks = map[string]CFPackRecord{}
+	}
+	for _, p := range packs {
+		s.meta.CurseForgePacks[p.UUID] = CFPackRecord{Mod: mod, File: f.ID, Version: p.Version, Page: page}
+	}
+	s.mu.Unlock()
+	if err := s.saveMeta(); err != nil {
+		s.m.log.Warn("couldn't save the CurseForge packs", "id", s.meta.ID, "error", err)
+	}
+}
+
+// cfFileCache keeps the file each CurseForge project would install, for an
+// hour, so opening the Add-ons tab doesn't ask CurseForge every time.
+type cfFileCache struct {
+	mu   sync.Mutex
+	at   map[string]time.Time
+	file map[string]cfFile
+}
+
+func (m *Manager) cachedCFFile(ctx context.Context, mod int, forVersion string) (cfFile, error) {
+	key := fmt.Sprintf("%d/%s", mod, forVersion)
+	c := &m.cfFiles
+	c.mu.Lock()
+	if f, ok := c.file[key]; ok && time.Since(c.at[key]) < versionCheckEvery {
+		c.mu.Unlock()
+		return f, nil
+	}
+	c.mu.Unlock()
+	f, err := m.cfFileFor(ctx, mod, forVersion)
+	if err != nil {
+		return f, err
+	}
+	c.mu.Lock()
+	if c.file == nil {
+		c.file, c.at = map[string]cfFile{}, map[string]time.Time{}
+	}
+	c.file[key], c.at[key] = f, time.Now()
+	c.mu.Unlock()
+	return f, nil
+}
+
+// PackUpdates returns the packs in the current world, installed from
+// CurseForge, that have a newer file for the server's Minecraft version
+// (pack ID → the new file's name).
+func (s *Server) PackUpdates(ctx context.Context) map[string]string {
+	out := map[string]string{}
+	if !s.isBedrock() || !s.m.CurseForgeKeySet() {
+		return out
+	}
+	v, err := s.Packs()
+	if err != nil {
+		return out
+	}
+	records := s.cfPackRecords()
+	version := s.Status().Version
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 4)
+	for _, p := range v.Packs {
+		r, ok := records[p.UUID]
+		if !ok || p.CurseForge == 0 {
+			continue
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			f, err := s.m.cachedCFFile(ctx, r.Mod, version)
+			if err != nil || f.ID == r.File || f.DownloadURL == "" {
+				return
+			}
+			name := strings.TrimSuffix(f.DisplayName, filepath.Ext(f.DisplayName))
+			if name == "" {
+				name = "a newer version"
+			}
+			mu.Lock()
+			out[p.UUID] = name
+			mu.Unlock()
+		}()
+	}
+	wg.Wait()
+	return out
+}
+
+// UpdateCurseForgePack installs the newest file of the CurseForge project a
+// pack came from, for the server's Minecraft version, over the old one.
+func (s *Server) UpdateCurseForgePack(ctx context.Context, uuid string) (string, InstallResult, error) {
+	v, err := s.Packs()
+	if err != nil {
+		return "", InstallResult{}, err
+	}
+	uuid = strings.ToLower(uuid)
+	for _, p := range v.Packs {
+		if p.UUID == uuid && p.CurseForge != 0 {
+			name, res, _, err := s.InstallCurseForge(ctx, p.CurseForge)
+			return name, res, err
+		}
+	}
+	return "", InstallResult{}, errors.New("that add-on wasn't installed from CurseForge (or was changed since), so the panel can't update it")
 }

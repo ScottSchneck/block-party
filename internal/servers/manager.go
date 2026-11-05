@@ -89,6 +89,7 @@ type Manager struct {
 	hostAddrs  func() HostAddresses
 	// pluginUpdates: the newest release of each Java plugin, for update notes.
 	pluginUpdates pluginUpdateCache
+	cfFiles       cfFileCache
 	hytale        hytaleAuth
 	hytaleLatest  hytaleCache
 	javaMu        sync.Mutex // one Java runtime install at a time
@@ -173,6 +174,9 @@ type Meta struct {
 	// PackSource: the modpack still to install ("modrinth:<project>" or
 	// "file:<upload>"), until it's in.
 	PackSource string `json:"packSource,omitempty"`
+	// CurseForgePacks are the Bedrock packs installed from CurseForge, by
+	// pack ID, so the Add-ons tab can offer their updates.
+	CurseForgePacks map[string]CFPackRecord `json:"curseForgePacks,omitempty"`
 }
 
 // The name is from before the panel was called Block Party; it stays so

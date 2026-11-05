@@ -8,6 +8,10 @@
   install one with the mods it needs, see when there's an update, turn
   mods off and on, and remove them. Each download is checked against the
   site's checksum. Mods added by hand show too.
+- **Updates for add-ons from CurseForge.** A Bedrock add-on installed from
+  CurseForge remembers where it came from; the Add-ons tab shows **Update
+  available** when there's a newer file for the server's Minecraft version,
+  and **Update** installs it over the old one.
 
 ## 1.6.1
 

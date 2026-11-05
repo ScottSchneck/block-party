@@ -14,6 +14,8 @@ func (s *Server) curseForgeRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("PUT /api/curseforge", ownerOnly(s.putCurseForge))
 	mux.HandleFunc("GET /api/curseforge/search", s.searchCurseForge)
 	mux.HandleFunc("POST /api/servers/{id}/curseforge", s.withServer(levelCare, s.installCurseForge))
+	mux.HandleFunc("GET /api/servers/{id}/packs/updates", s.withServer(levelCare, s.packUpdates))
+	mux.HandleFunc("POST /api/servers/{id}/packs/{uuid}/update", s.withServer(levelCare, s.updatePack))
 }
 
 func (s *Server) getCurseForge(w http.ResponseWriter, r *http.Request) {
@@ -120,4 +122,25 @@ func (s *Server) installCurseForge(w http.ResponseWriter, r *http.Request, srv *
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"name": name, "packs": res, "world": world})
+}
+
+// packUpdates: the add-ons from CurseForge that have a newer file.
+func (s *Server) packUpdates(w http.ResponseWriter, r *http.Request, srv *servers.Server) {
+	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+	defer cancel()
+	writeJSON(w, http.StatusOK, srv.PackUpdates(ctx))
+}
+
+func (s *Server) updatePack(w http.ResponseWriter, r *http.Request, srv *servers.Server) {
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Minute)
+	defer cancel()
+	name, res, err := srv.UpdateCurseForgePack(ctx, r.PathValue("uuid"))
+	for _, p := range res.Installed {
+		s.note(r, srv, "updated the add-on "+p.Name+" to "+p.Version+" from CurseForge")
+	}
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"name": name, "packs": res})
 }

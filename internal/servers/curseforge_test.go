@@ -235,6 +235,39 @@ func TestCurseForgeBedrock(t *testing.T) {
 	if _, _, _, err := s.InstallCurseForge(t.Context(), 104); err == nil || !strings.Contains(err.Error(), "needs Minecraft 26.60 or newer, and this server has 1.26.52.3") {
 		t.Errorf("too new: %v", err)
 	}
+
+	// Updates: the pack knows where it came from; once a better file is out
+	// (here: the record says an older one), Update installs it.
+	pv, _ := s.Packs()
+	var mobs Pack
+	for _, p := range pv.Packs {
+		if p.Version == "26.50.0" {
+			mobs = p
+		}
+	}
+	if mobs.CurseForge != 103 || mobs.Page == "" {
+		t.Fatalf("the pack from CurseForge: %+v", mobs)
+	}
+	if u := s.PackUpdates(t.Context()); len(u) != 0 {
+		t.Errorf("no update yet: %v", u)
+	}
+	s.mu.Lock()
+	r := s.meta.CurseForgePacks[mobs.UUID]
+	r.File = 1033
+	s.meta.CurseForgePacks[mobs.UUID] = r
+	s.mu.Unlock()
+	if u := s.PackUpdates(t.Context()); u[mobs.UUID] != "mobs-26.50" {
+		t.Fatalf("update: %v", u)
+	}
+	if _, res, err := s.UpdateCurseForgePack(t.Context(), mobs.UUID); err != nil || len(res.Installed) != 1 {
+		t.Fatalf("updating: %+v %v", res, err)
+	}
+	if r := s.cfPackRecords()[mobs.UUID]; r.File != 1032 {
+		t.Errorf("after the update: %+v", r)
+	}
+	if _, _, err := s.UpdateCurseForgePack(t.Context(), "66666666-0000-0000-0000-000000000000"); err == nil {
+		t.Error("a pack not from CurseForge")
+	}
 	if _, _, _, err := s.InstallCurseForge(t.Context(), 101); err == nil || !strings.Contains(err.Error(), "only allows downloading it from CurseForge") {
 		t.Errorf("a creator's choice is respected: %v", err)
 	}

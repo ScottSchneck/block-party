@@ -590,8 +590,12 @@ downloading take someone who **takes care of** it.
 **Find add-ons on CurseForge.** With a CurseForge API key (Settings →
 CurseForge; get one free at [console.curseforge.com](https://console.curseforge.com/)),
 the Add-ons tab can search CurseForge's Bedrock add-ons, texture packs and
-worlds and install them with one button. Some creators only allow downloads
-from CurseForge itself; those show a link instead.
+worlds and install them with one button. Only what works on the server's
+Minecraft version is shown, and the file made for that version is the one
+installed. Some creators only allow downloads from CurseForge itself; those
+are left out. Add-ons installed from CurseForge show **Update available**
+when the creator posts a newer file for the server's version, and **Update**
+puts it in over the old one.
 
 ### Moving from Crafty
 

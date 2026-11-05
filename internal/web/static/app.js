@@ -2742,8 +2742,13 @@ function showAddonsError(err) {
   $("addons-error").hidden = !err;
 }
 
+let packUpdates = {}; // pack ID -> newer CurseForge file, for the add-ons shown
+let packUpdatesFor = null;
+
 function resetAddons() {
   addonsFor = null;
+  packUpdates = {};
+  packUpdatesFor = null;
   $("cf-results").replaceChildren();
   $("addons-list").replaceChildren();
   $("worlds-list").replaceChildren();
@@ -2762,6 +2767,16 @@ async function loadAddons() {
     addonsFor = id;
     renderAddons(packs, worlds);
     showAddonsError(null);
+    // Updates for add-ons from CurseForge, asked once per visit.
+    const s = serverList.find((x) => x.id === id);
+    if (packUpdatesFor !== id && s && access(s) >= CARE && packs.packs.some((p) => p.curseforge)) {
+      packUpdatesFor = id;
+      api(sid() + "/packs/updates").then((u) => {
+        if (id !== selected) return;
+        packUpdates = u || {};
+        if (Object.keys(packUpdates).length) renderAddons(packs, worlds);
+      }).catch(() => {});
+    }
   } catch (err) { if (id === selected) showAddonsError(err); }
 }
 
@@ -2855,14 +2870,31 @@ function renderAddons(v, wv) {
     const bits = [p.kind === "behavior" ? "Behavior pack" : "Resource pack"];
     if (p.version) bits.push(p.version);
     if (p.size) bits.push(mb1(p.size));
-    const name = el("span", { class: "who" }, el("span", {}, p.name,
+    if (p.curseforge) bits.push("from CurseForge");
+    const newer = packUpdates[p.uuid];
+    const title = p.page ? el("a", { href: p.page, target: "_blank", rel: "noopener noreferrer" }, p.name) : p.name;
+    const name = el("span", { class: "who" }, el("span", {}, title,
       p.enabled ? null : el("span", { class: "tag" }, "Off"),
+      newer ? el("span", { class: "tag warn", title: newer }, "Update available") : null,
       p.missing ? el("span", { class: "tag warn" }, "Files missing") : null,
       p.needsBeta ? el("span", { class: "tag warn", title: "Uses scripting that needs the world's Beta APIs experiment" }, "Needs Beta APIs") : null),
       el("small", {}, bits.join(" · ") + (p.description ? " · " + p.description : "")),
       p.needsBeta && care ? el("small", { class: "warn" }, "This add-on needs the Beta APIs experiment, which can't be turned on from the panel. Turn it on for the world in the game (Edit world, Experiments), then export the world and upload it below.") : null);
     const buttons = [];
     if (care) {
+      if (newer) {
+        buttons.push(btn("Update", (ev) => {
+          const b = ev.currentTarget;
+          b.disabled = true;
+          b.textContent = "Updating…";
+          addonsCall(async () => {
+            const r = await post(`${sid()}/packs/${enc(p.uuid)}/update`);
+            delete packUpdates[p.uuid];
+            if (r.packs) addonsNeedRestart(r.packs.running);
+            return r;
+          });
+        }, "primary"));
+      }
       if (!p.missing) {
         buttons.push(btn(p.enabled ? "Turn off" : "Turn on", () => addonsCall(async () => {
           const nv = await post(`${sid()}/packs/${enc(p.uuid)}`, { enabled: !p.enabled });
