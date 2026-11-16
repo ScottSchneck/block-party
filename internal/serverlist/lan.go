@@ -72,15 +72,20 @@ type lanSignaling struct {
 	*discovery.Listener
 	mu   sync.Mutex
 	card *discovery.ServerData
+	// signedOffers holds the connections whose offer carried an identity.
+	signedOffers sync.Map
 }
 
 // Notify logs the network addresses a console offers (at debug), so a LAN
 // join that can't connect shows why.
 func (s *lanSignaling) Notify(n nethernet.Notifier) (stop func()) {
-	return s.Listener.Notify(candidateLogger{n})
+	return s.Listener.Notify(candidateLogger{n, s})
 }
 
-type candidateLogger struct{ nethernet.Notifier }
+type candidateLogger struct {
+	nethernet.Notifier
+	s *lanSignaling
+}
 
 func (c candidateLogger) NotifySignal(sig *nethernet.Signal) bool {
 	switch sig.Type {
@@ -88,6 +93,7 @@ func (c candidateLogger) NotifySignal(sig *nethernet.Signal) bool {
 		slog.Debug("LAN console offered an address", "connectionID", sig.ConnectionID, "candidate", sig.Data)
 	case nethernet.SignalTypeOffer:
 		slog.Debug("LAN console's connection offer", "connectionID", sig.ConnectionID, "sdp", sig.Data)
+		c.s.noteOffer(sig)
 		for _, line := range strings.Split(sig.Data, "\n") {
 			if line = strings.TrimSpace(line); strings.HasPrefix(line, "a=candidate:") {
 				slog.Debug("LAN console offered an address", "connectionID", sig.ConnectionID, "candidate", strings.TrimPrefix(line, "a="))
@@ -99,7 +105,32 @@ func (c candidateLogger) NotifySignal(sig *nethernet.Signal) bool {
 
 // Signal logs what the list sends back to a console (at debug), and when
 // sending fails.
+// noteOffer remembers whether a console's offer carried an identity.
+func (s *lanSignaling) noteOffer(sig *nethernet.Signal) {
+	if strings.Contains(sig.Data, "a=identity:") {
+		s.signedOffers.Store(sig.ConnectionID, true)
+	}
+}
+
+// outgoing is the signal as sent: a console that sent no identity gets
+// none back. A Switch joining from LAN Games sends none, and given the
+// list's own (signed by the list itself) it never took the answer: it
+// replied to the list's connection checks but sent none of its own, then
+// failed with error NetherNet.
+func (s *lanSignaling) outgoing(sig *nethernet.Signal) *nethernet.Signal {
+	if sig.Type != nethernet.SignalTypeAnswer {
+		return sig
+	}
+	if _, signed := s.signedOffers.LoadAndDelete(sig.ConnectionID); signed {
+		return sig
+	}
+	c := *sig
+	c.Data = withoutIdentity(sig.Data)
+	return &c
+}
+
 func (s *lanSignaling) Signal(ctx context.Context, sig *nethernet.Signal) error {
+	sig = s.outgoing(sig)
 	err := s.Listener.Signal(ctx, sig)
 	if err != nil {
 		slog.Warn("could not answer a LAN console", "type", sig.Type, "connectionID", sig.ConnectionID, "error", err)
@@ -119,6 +150,18 @@ func (s *lanSignaling) Signal(ctx context.Context, sig *nethernet.Signal) error 
 		slog.Debug("sent a LAN console a signal", "type", sig.Type, "connectionID", sig.ConnectionID, "data", sig.Data)
 	}
 	return nil
+}
+
+// withoutIdentity removes the 'a=identity' line from an SDP.
+func withoutIdentity(sdp string) string {
+	lines := strings.SplitAfter(sdp, "\n")
+	out := lines[:0]
+	for _, l := range lines {
+		if !strings.HasPrefix(l, "a=identity:") {
+			out = append(out, l)
+		}
+	}
+	return strings.Join(out, "")
 }
 
 func (s *lanSignaling) PongData(b []byte) {

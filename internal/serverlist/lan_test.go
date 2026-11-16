@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -75,8 +76,8 @@ func TestLANGamesDiscoveryAndJoin(t *testing.T) {
 	conn.Close()
 
 	// A real console sends no identity with a LAN offer, even with sign-in
-	// checks on (AUTH_OFF unset).
-	anon, err := nethernet.Dialer{}.DialContext(ctx, strconv.FormatUint(id, 10), console)
+	// checks on (AUTH_OFF unset), and gets none back.
+	anon, err := nethernet.Dialer{AllowIdentitylessServer: true}.DialContext(ctx, strconv.FormatUint(id, 10), console)
 	if err != nil {
 		t.Fatalf("joining over LAN without an identity: %v", err)
 	}
@@ -85,7 +86,7 @@ func TestLANGamesDiscoveryAndJoin(t *testing.T) {
 	// Consoles may hide their address behind a random ".local" name.
 	var se webrtc.SettingEngine
 	se.SetICEMulticastDNSMode(ice.MulticastDNSModeQueryAndGather)
-	hidden, err := nethernet.Dialer{API: webrtc.NewAPI(webrtc.WithSettingEngine(se))}.DialContext(ctx, strconv.FormatUint(id, 10), console)
+	hidden, err := nethernet.Dialer{AllowIdentitylessServer: true, API: webrtc.NewAPI(webrtc.WithSettingEngine(se))}.DialContext(ctx, strconv.FormatUint(id, 10), console)
 	if err != nil {
 		t.Fatalf("joining over LAN with a .local address: %v", err)
 	}
@@ -116,5 +117,28 @@ func TestLANCardKeepsVersionOnStatusUpdates(t *testing.T) {
 	s.PongData([]byte("MCPE;Family Servers;2225;1.26.60;3;100;123;Pick;Adventure;2;19132;19132;0;"))
 	if s.card.PlayerCount != 3 || s.card.Version == "" || s.card.LevelName != "Family Servers" || s.card.Nonce == "" {
 		t.Errorf("card after a status push: %+v", s.card)
+	}
+}
+
+func TestWithoutIdentity(t *testing.T) {
+	in := "v=0\r\na=msid-semantic: WMS\r\na=identity:abc\r\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\n"
+	want := "v=0\r\na=msid-semantic: WMS\r\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\n"
+	if got := withoutIdentity(in); got != want {
+		t.Errorf("got %q", got)
+	}
+}
+
+// A console that sends no identity gets an answer without one; a console
+// that sends one gets the list's back.
+func TestLANAnswerIdentityFollowsOffer(t *testing.T) {
+	s := &lanSignaling{}
+	s.noteOffer(&nethernet.Signal{Type: nethernet.SignalTypeOffer, ConnectionID: 1, Data: "v=0\r\n"})
+	s.noteOffer(&nethernet.Signal{Type: nethernet.SignalTypeOffer, ConnectionID: 2, Data: "v=0\r\na=identity:xyz\r\n"})
+	answer := "v=0\r\na=identity:abc\r\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\n"
+	if got := s.outgoing(&nethernet.Signal{Type: nethernet.SignalTypeAnswer, ConnectionID: 1, Data: answer}).Data; strings.Contains(got, "a=identity") {
+		t.Errorf("answer to an unsigned offer kept its identity: %q", got)
+	}
+	if got := s.outgoing(&nethernet.Signal{Type: nethernet.SignalTypeAnswer, ConnectionID: 2, Data: answer}).Data; got != answer {
+		t.Errorf("answer to a signed offer changed: %q", got)
 	}
 }
