@@ -1,13 +1,21 @@
 # Changelog
 
-## Unreleased
+## 1.7.1
 
 - **The server list shows under LAN Games again on Minecraft 26.60 and
-  later.** Newer consoles look for LAN games a new way (UDP 7551), so the
-  list stopped appearing under Friends → LAN Games; it answers there now,
-  and consoles join it over the home network without certificates or DNS.
-  Needs the container on its own IP (Unraid's `br0`). Turn it off with
-  `LAN_DISCOVERY=false`.
+  later, and consoles can join it from there.** Newer consoles look for
+  LAN games a new way (UDP 7551), so the list had stopped appearing under
+  Friends → LAN Games. It answers there now, and a console that picks it
+  connects over the home network, with no DNS change and no certificate
+  (tested on a Switch). Needs the container on its own IP (Unraid's
+  `br0`). Turn it off with `LAN_DISCOVERY=false`.
+- Joining through a featured server (the DNS way) doesn't work on
+  Minecraft 26.62 and later: consoles now refuse the list's own
+  certificate there (error Terracotta, or "try again later"). At home,
+  use LAN Games instead.
+- With `LOG_LEVEL=debug`, the log shows each step of a LAN join, so one
+  that fails shows where.
+- The panel shutting down or restarting no longer logs warnings.
 - Updated the NetherNet library (go-nethernet 1.0.27) and the WebRTC
   libraries under it.
 

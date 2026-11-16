@@ -243,7 +243,10 @@ Minecraft 26.60 and later look for LAN games on UDP 7551, so the container
 needs its own IP on your network (Unraid's `br0`, or host networking): LAN
 searches are broadcasts, which don't get through Docker's port mapping.
 Otherwise, set the console's DNS to the container's IP, **restart the
-console**, open Minecraft, and join any featured server.
+console**, open Minecraft, and join any featured server. (On Minecraft
+26.62 and later the featured-server way stops at error Terracotta or "try
+again later": consoles refuse the list's own certificate there. Use LAN
+Games.)
 
 ### People and roles
 
