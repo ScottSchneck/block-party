@@ -275,3 +275,25 @@ func TestSignInWhileOnlineKeepsTheAccount(t *testing.T) {
 		t.Fatalf("after cancelling: %+v", st)
 	}
 }
+
+// Try now wakes a waiting retry, and does nothing otherwise.
+func TestRetryNow(t *testing.T) {
+	m := New(Options{DataDir: t.TempDir()})
+	if st := m.RetryNow(); st.State != StateSignedOut {
+		t.Fatalf("signed out: %+v", st)
+	}
+	select {
+	case <-m.wake:
+		t.Fatal("woke while signed out")
+	default:
+	}
+	m.st = Status{State: StateRetrying, RetryAt: time.Now().Add(time.Minute), SignupURL: "https://www.xbox.com"}
+	if st := m.RetryNow(); st.State != StateStarting || !st.RetryAt.IsZero() {
+		t.Fatalf("retrying: %+v", st)
+	}
+	select {
+	case <-m.wake:
+	default:
+		t.Fatal("not woken")
+	}
+}

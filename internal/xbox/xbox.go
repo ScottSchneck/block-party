@@ -70,6 +70,9 @@ type Status struct {
 	Members int `json:"members"`
 	// RetryAt is when connecting is tried again, while State is StateRetrying.
 	RetryAt time.Time `json:"retryAt,omitzero"`
+	// SignupURL is where to finish making the account's Xbox profile, when
+	// the Microsoft account doesn't have one yet.
+	SignupURL string `json:"signupURL,omitempty"`
 }
 
 // Link is the account's connection to the signaling service, for the server
@@ -259,6 +262,17 @@ func (m *Manager) CancelSignIn() Status {
 	m.st = m.beforeCode
 	if m.saved == nil {
 		m.st = Status{State: StateSignedOut}
+	}
+	return m.st
+}
+
+// RetryNow tries connecting again right away, while waiting to retry.
+func (m *Manager) RetryNow() Status {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.st.State == StateRetrying {
+		m.st.State, m.st.RetryAt = StateStarting, time.Time{}
+		m.poke()
 	}
 	return m.st
 }

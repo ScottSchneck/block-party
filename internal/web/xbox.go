@@ -14,6 +14,11 @@ func (s *Server) xboxRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/xbox/sign-in", ownerOnly(s.xboxSignIn))
 	mux.HandleFunc("POST /api/xbox/cancel", ownerOnly(s.xboxCancel))
 	mux.HandleFunc("POST /api/xbox/sign-out", ownerOnly(s.xboxSignOut))
+	mux.HandleFunc("POST /api/xbox/retry", ownerOnly(s.xboxRetry))
+}
+
+func (s *Server) xboxRetry(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, s.xbox.RetryNow())
 }
 
 func (s *Server) getXbox(w http.ResponseWriter, r *http.Request) {

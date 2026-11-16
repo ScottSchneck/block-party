@@ -3708,7 +3708,12 @@ function renderXbox(st) {
       break;
     case "retrying":
       parts.push(fact(false, `${st.gamertag ? st.gamertag + " couldn't" : "The account couldn't"} get online: ${st.error || "unknown error"}. Trying again ${st.retryAt ? "at " + new Date(st.retryAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "soon"}.`));
-      parts.push(el("div", { class: "row" }, signOut(), signIn("Sign in again")));
+      if (st.signupURL) {
+        parts.push(el("p", { class: "small" }, "Open ",
+          el("a", { href: st.signupURL, target: "_blank", rel: "noopener" }, "Xbox sign-up"),
+          " signed in as the spare account, pick a gamertag, then come back: the panel tries again on its own, or click Try now."));
+      }
+      parts.push(el("div", { class: "row" }, signOut(), xboxButton("Try now", (ev) => xboxAction("/api/xbox/retry", ev.currentTarget)), signIn("Sign in again")));
       break;
     default:
       if (st.error) parts.push(fact(false, st.error));

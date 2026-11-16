@@ -14,6 +14,7 @@ import (
 	"github.com/df-mc/go-xsapi/v2"
 	"github.com/df-mc/go-xsapi/v2/mpsd"
 	"github.com/df-mc/go-xsapi/v2/presence"
+	"github.com/df-mc/go-xsapi/v2/xal/sisu"
 	"github.com/sandertv/gophertunnel/minecraft/auth"
 	"github.com/sandertv/gophertunnel/minecraft/service"
 	"golang.org/x/oauth2"
@@ -52,8 +53,19 @@ func (m *Manager) online(ctx context.Context, a *savedAccount, gen int) error {
 	xctx := auth.WithXBLTokenCache(ctx, liveConfig.NewTokenCache())
 	xbl, err := xsapi.ClientConfig{HTTPClient: client, Logger: m.log}.New(xctx, auth.ContextSession(xctx, live))
 	if err != nil {
+		var noProfile *sisu.AccountCreationRequiredError
+		if errors.As(err, &noProfile) {
+			// A new Microsoft account without an Xbox profile yet.
+			signup := "https://www.xbox.com"
+			if noProfile.SignupURL != nil {
+				signup = noProfile.SignupURL.String()
+			}
+			m.update(gen, func(s *Status) { s.SignupURL = signup })
+			return errors.New("this Microsoft account has no Xbox profile yet. Sign in once at xbox.com with it to create one (pick a gamertag); the panel then gets online on its own")
+		}
 		return signInError(fmt.Errorf("Xbox Live: %w", err))
 	}
+	m.update(gen, func(s *Status) { s.SignupURL = "" })
 	defer xbl.Close()
 	user := xbl.UserInfo()
 	m.mu.Lock()
