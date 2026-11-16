@@ -38,6 +38,11 @@ func startLANDiscovery(ctx context.Context, cfg *Config, listenCfg minecraft.Lis
 	sig := &lanSignaling{Listener: d, card: lanServerData(cfg)}
 	d.ServerData(sig.card)
 	conf.Log = slog.Default().With("src", "nethernet-lan")
+	// Consoles joining a LAN game send no Microsoft-issued identity with
+	// their connection offer (the featured-server route does), so the
+	// offer can't require one. Sign-in is still read from the login itself
+	// (checkSignIn), and the game server a console picks checks it again.
+	conf.AllowAnonymous = true
 	l, err := listenWithRetry(ctx, "NetherNet LAN", func() (*minecraft.Listener, error) {
 		return listenCfg.ListenNetwork(minecraft.NetherNet{Signaling: sig, ListenConfig: conf}, d.NetworkID())
 	})

@@ -19,14 +19,14 @@ import (
 // A console on Minecraft 26.60 or later finds the list under LAN Games
 // through LAN discovery on UDP 7551, and joins it over the same channel.
 func TestLANGamesDiscoveryAndJoin(t *testing.T) {
-	cfg := &Config{ListName: "Family Servers", ListSubtitle: "Pick a server", AuthOff: true, DataDir: t.TempDir(),
+	cfg := &Config{ListName: "Family Servers", ListSubtitle: "Pick a server", DataDir: t.TempDir(),
 		MenuTitle: "Pick a server", RTCPortMin: 0, RTCPortMax: 0}
 	key, err := loadOrCreateIdentityKey(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
 	listenCfg := minecraft.ListenConfig{AuthenticationDisabled: true, StatusProvider: minecraft.NewStatusProvider(cfg.ListName, cfg.ListSubtitle), MaximumPlayers: 100}
-	conf := nethernet.ListenConfig{API: webrtcAPI(cfg), DisableTrickleICE: true, AllowAnonymous: true,
+	conf := nethernet.ListenConfig{API: webrtcAPI(cfg), DisableTrickleICE: true, AllowAnonymous: false,
 		IssueServerIdentity: identityIssuer(key), VerifyClientIdentity: verifyOfferIdentity}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -71,6 +71,14 @@ func TestLANGamesDiscoveryAndJoin(t *testing.T) {
 		t.Fatalf("joining over LAN: %v", err)
 	}
 	conn.Close()
+
+	// A real console sends no identity with a LAN offer, even with sign-in
+	// checks on (AUTH_OFF unset).
+	anon, err := nethernet.Dialer{}.DialContext(ctx, strconv.FormatUint(id, 10), console)
+	if err != nil {
+		t.Fatalf("joining over LAN without an identity: %v", err)
+	}
+	anon.Close()
 }
 
 func mustSelfSigned(t *testing.T) *nethernet.Identity {
