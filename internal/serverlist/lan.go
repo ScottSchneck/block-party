@@ -12,6 +12,8 @@ import (
 
 	"github.com/df-mc/go-nethernet"
 	"github.com/df-mc/go-nethernet/discovery"
+	"github.com/pion/ice/v4"
+	"github.com/pion/webrtc/v4"
 	"github.com/sandertv/gophertunnel/minecraft"
 	"github.com/sandertv/gophertunnel/minecraft/protocol"
 )
@@ -43,6 +45,7 @@ func startLANDiscovery(ctx context.Context, cfg *Config, listenCfg minecraft.Lis
 	// offer can't require one. Sign-in is still read from the login itself
 	// (checkSignIn), and the game server a console picks checks it again.
 	conf.AllowAnonymous = true
+	conf.API = lanWebRTCAPI(cfg)
 	l, err := listenWithRetry(ctx, "NetherNet LAN", func() (*minecraft.Listener, error) {
 		return listenCfg.ListenNetwork(minecraft.NetherNet{Signaling: sig, ListenConfig: conf}, d.NetworkID())
 	})
@@ -66,6 +69,51 @@ type lanSignaling struct {
 	card *discovery.ServerData
 }
 
+// Notify logs the network addresses a console offers (at debug), so a LAN
+// join that can't connect shows why.
+func (s *lanSignaling) Notify(n nethernet.Notifier) (stop func()) {
+	return s.Listener.Notify(candidateLogger{n})
+}
+
+type candidateLogger struct{ nethernet.Notifier }
+
+func (c candidateLogger) NotifySignal(sig *nethernet.Signal) bool {
+	switch sig.Type {
+	case nethernet.SignalTypeCandidate:
+		slog.Debug("LAN console offered an address", "connectionID", sig.ConnectionID, "candidate", sig.Data)
+	case nethernet.SignalTypeOffer:
+		for _, line := range strings.Split(sig.Data, "\n") {
+			if line = strings.TrimSpace(line); strings.HasPrefix(line, "a=candidate:") {
+				slog.Debug("LAN console offered an address", "connectionID", sig.ConnectionID, "candidate", strings.TrimPrefix(line, "a="))
+			}
+		}
+	}
+	return c.Notifier.NotifySignal(sig)
+}
+
+// Signal logs what the list sends back to a console (at debug), and when
+// sending fails.
+func (s *lanSignaling) Signal(ctx context.Context, sig *nethernet.Signal) error {
+	err := s.Listener.Signal(ctx, sig)
+	if err != nil {
+		slog.Warn("could not answer a LAN console", "type", sig.Type, "connectionID", sig.ConnectionID, "error", err)
+		return err
+	}
+	if sig.Type == nethernet.SignalTypeAnswer {
+		n := 0
+		for _, line := range strings.Split(sig.Data, "\n") {
+			if line = strings.TrimSpace(line); strings.HasPrefix(line, "a=candidate:") {
+				n++
+				slog.Debug("told a LAN console this address", "connectionID", sig.ConnectionID, "candidate", strings.TrimPrefix(line, "a="))
+			}
+		}
+		slog.Debug("answered a LAN console", "connectionID", sig.ConnectionID, "addresses", n)
+	} else {
+		slog.Debug("sent a LAN console a signal", "type", sig.Type, "connectionID", sig.ConnectionID, "data", sig.Data)
+	}
+	return nil
+}
+
 func (s *lanSignaling) PongData(b []byte) {
 	parts := strings.Split(string(b), ";")
 	if len(parts) < 6 {
@@ -82,6 +130,19 @@ func (s *lanSignaling) PongData(b []byte) {
 	c.PlayerCount, c.MaxPlayerCount = int32(players), int32(max)
 	s.card = &c
 	s.Listener.ServerData(&c)
+}
+
+// lanWebRTCAPI is webrtcAPI for LAN joins, with multicast DNS lookups on:
+// consoles on the home network may hide their address behind a random
+// ".local" name, which can only be looked up that way. The list doesn't
+// announce a name of its own (it gives its address).
+func lanWebRTCAPI(cfg *Config) *webrtc.API {
+	var s webrtc.SettingEngine
+	s.SetICEMulticastDNSMode(ice.MulticastDNSModeQueryOnly)
+	if err := s.SetEphemeralUDPPortRange(cfg.RTCPortMin, cfg.RTCPortMax); err != nil {
+		slog.Warn("could not limit WebRTC ports", "error", err)
+	}
+	return webrtc.NewAPI(webrtc.WithSettingEngine(s))
 }
 
 // lanServerData is the list's card under LAN Games: its name on top, the

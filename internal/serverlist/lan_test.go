@@ -13,6 +13,8 @@ import (
 
 	"github.com/df-mc/go-nethernet"
 	"github.com/df-mc/go-nethernet/discovery"
+	"github.com/pion/ice/v4"
+	"github.com/pion/webrtc/v4"
 	"github.com/sandertv/gophertunnel/minecraft"
 )
 
@@ -79,6 +81,15 @@ func TestLANGamesDiscoveryAndJoin(t *testing.T) {
 		t.Fatalf("joining over LAN without an identity: %v", err)
 	}
 	anon.Close()
+
+	// Consoles may hide their address behind a random ".local" name.
+	var se webrtc.SettingEngine
+	se.SetICEMulticastDNSMode(ice.MulticastDNSModeQueryAndGather)
+	hidden, err := nethernet.Dialer{API: webrtc.NewAPI(webrtc.WithSettingEngine(se))}.DialContext(ctx, strconv.FormatUint(id, 10), console)
+	if err != nil {
+		t.Fatalf("joining over LAN with a .local address: %v", err)
+	}
+	hidden.Close()
 }
 
 func mustSelfSigned(t *testing.T) *nethernet.Identity {
