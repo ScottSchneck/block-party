@@ -46,6 +46,11 @@ func startLANDiscovery(ctx context.Context, cfg *Config, listenCfg minecraft.Lis
 	// (checkSignIn), and the game server a console picks checks it again.
 	conf.AllowAnonymous = true
 	conf.API = lanWebRTCAPI(cfg)
+	// Send the list's addresses as separate signals after the answer, as a
+	// game hosting a LAN world does. With them only inside the answer, a
+	// Switch never connected (the path search timed out). The HTTP route
+	// can't do this and keeps its own setting.
+	conf.DisableTrickleICE = false
 	l, err := listenWithRetry(ctx, "NetherNet LAN", func() (*minecraft.Listener, error) {
 		return listenCfg.ListenNetwork(minecraft.NetherNet{Signaling: sig, ListenConfig: conf}, d.NetworkID())
 	})
