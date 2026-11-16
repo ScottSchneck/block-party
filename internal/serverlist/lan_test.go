@@ -142,3 +142,10 @@ func TestLANAnswerIdentityFollowsOffer(t *testing.T) {
 		t.Errorf("answer to a signed offer changed: %q", got)
 	}
 }
+
+func TestPionLogsOnlyICE(t *testing.T) {
+	var f pionLogs
+	if f.NewLogger("ice").(pionLogger).quiet || !f.NewLogger("sctp").(pionLogger).quiet || !f.NewLogger("mdns").(pionLogger).quiet {
+		t.Error("only ICE logs should pass")
+	}
+}

@@ -8,18 +8,25 @@ import (
 	"github.com/pion/logging"
 )
 
-// pionLogs passes the WebRTC library's own logs for LAN joins to the panel's
-// log, all at debug (with LOG_LEVEL=debug), so a console that can't connect
-// shows whether its connection checks arrive and what happens to them.
+// pionLogs passes the WebRTC library's connection-setup logs (ICE: checks
+// sent and received, pairs found, state changes) for LAN joins to the
+// panel's log at debug (with LOG_LEVEL=debug), so a console that can't
+// connect shows why. Other parts (SCTP logs every packet, mDNS every
+// device on the network) stay quiet.
 type pionLogs struct{}
 
 func (pionLogs) NewLogger(scope string) logging.LeveledLogger {
-	return pionLogger{slog.Default().With("src", "webrtc-lan", "scope", scope)}
+	return pionLogger{l: slog.Default().With("src", "webrtc-lan", "scope", scope), quiet: scope != "ice"}
 }
 
-type pionLogger struct{ l *slog.Logger }
+type pionLogger struct {
+	l     *slog.Logger
+	quiet bool
+}
 
-func (p pionLogger) on() bool { return p.l.Enabled(context.Background(), slog.LevelDebug) }
+func (p pionLogger) on() bool {
+	return !p.quiet && p.l.Enabled(context.Background(), slog.LevelDebug)
+}
 
 func (p pionLogger) log(msg string) {
 	if p.on() {
