@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	xsocial "github.com/df-mc/go-xsapi/v2/social"
 	"github.com/google/uuid"
 	"github.com/sandertv/gophertunnel/minecraft/protocol"
 	"golang.org/x/oauth2"
@@ -295,5 +296,31 @@ func TestRetryNow(t *testing.T) {
 	case <-m.wake:
 	default:
 		t.Fatal("not woken")
+	}
+}
+
+func TestRetryAfter(t *testing.T) {
+	if d := retryAfter(fmt.Errorf("wrapped: %w", &xsocial.ResponseError{StatusCode: 429, RetryAfter: 5 * time.Minute})); d < 5*time.Minute {
+		t.Errorf("retryAfter = %s", d)
+	}
+	if retryAfter(errors.New("other")) != 0 {
+		t.Error("an error without Retry-After should give 0")
+	}
+}
+
+// A notice of more friend requests nudges the loop once; fewer don't.
+func TestFriendRequestNotices(t *testing.T) {
+	ch := make(chan struct{}, 1)
+	n := friendRequestNotices{ch}
+	n.HandleIncomingFriendRequestCountChange(0)
+	select {
+	case <-ch:
+		t.Fatal("nudged for no requests")
+	default:
+	}
+	n.HandleIncomingFriendRequestCountChange(1)
+	n.HandleIncomingFriendRequestCountChange(2)
+	if len(ch) != 1 {
+		t.Fatalf("nudges queued: %d", len(ch))
 	}
 }

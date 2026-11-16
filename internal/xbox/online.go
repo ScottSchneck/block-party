@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"sync"
 	"time"
 
@@ -14,6 +13,7 @@ import (
 	"github.com/df-mc/go-xsapi/v2"
 	"github.com/df-mc/go-xsapi/v2/mpsd"
 	"github.com/df-mc/go-xsapi/v2/presence"
+	xsocial "github.com/df-mc/go-xsapi/v2/social"
 	"github.com/df-mc/go-xsapi/v2/xal/sisu"
 	"github.com/sandertv/gophertunnel/minecraft/auth"
 	"github.com/sandertv/gophertunnel/minecraft/service"
@@ -212,22 +212,35 @@ func (m *Manager) keepPresence(ctx context.Context, p *presence.Client) {
 	}
 }
 
+// friendCheckEvery is how often friend requests are looked for when Xbox
+// Live sends no notice of a new one.
+const friendCheckEvery = 5 * time.Minute
+
 // acceptFriends accepts friend requests (from Minecraft 26.30, adding the
-// account as a friend sends one) and counts friends.
+// account as a friend sends one) and counts friends. It looks when Xbox
+// Live says a request arrived, and every few minutes besides; the people
+// lists are rate limited (429 with Retry-After), so it waits as long as
+// they ask.
 func (m *Manager) acceptFriends(ctx context.Context, xbl *xsapi.Client, gen int) {
 	social := xbl.Social()
+	nudge := make(chan struct{}, 1)
+	if err := social.Subscribe(ctx, friendRequestNotices{nudge}); err != nil {
+		m.log.Debug("no notices of friend requests; looking every few minutes", "error", err)
+	}
+	quiet := xsocial.PeopleListConfig{Undecorated: true}
 	for {
+		wait := friendCheckEvery
 		call, cancel := context.WithTimeout(ctx, 20*time.Second)
-		pending, err := social.IncomingFriendRequests(call)
+		pending, err := social.People(call, xsocial.PeopleListIncomingFriendRequests, quiet)
 		cancel()
 		if err != nil && ctx.Err() == nil {
-			m.log.Warn("couldn't read Xbox friend requests", "error", err)
+			wait = max(retryAfter(err), wait)
+			m.log.Warn("couldn't read Xbox friend requests", "error", err, "next", wait)
 		}
-		var xuids, names []string
+		var xuids []string
 		for _, u := range pending {
 			if u.XUID != "" {
 				xuids = append(xuids, u.XUID)
-				names = append(names, u.DisplayName)
 			}
 		}
 		left := len(xuids)
@@ -236,23 +249,63 @@ func (m *Manager) acceptFriends(ctx context.Context, xbl *xsapi.Client, gen int)
 			_, err := social.AddFriends(call, xuids)
 			cancel()
 			if err != nil {
-				m.log.Warn("couldn't accept Xbox friend requests", "error", err, "from", strings.Join(names, ", "))
+				wait = max(retryAfter(err), time.Minute)
+				m.log.Warn("couldn't accept Xbox friend requests", "error", err, "count", len(xuids))
 			} else {
 				left = 0
-				m.log.Info("accepted Xbox friend requests; they can join the server list from the Friends tab", "from", strings.Join(names, ", "))
+				m.log.Info("accepted Xbox friend requests; they can join the server list from the Friends tab", "count", len(xuids))
 			}
 		}
-		call, cancel = context.WithTimeout(ctx, 20*time.Second)
-		friends, err := social.Friends(call)
-		cancel()
 		if err == nil {
-			m.update(gen, func(s *Status) { s.Friends, s.Pending = len(friends), left })
+			call, cancel = context.WithTimeout(ctx, 20*time.Second)
+			friends, err := social.People(call, xsocial.PeopleListFriends, quiet)
+			cancel()
+			if err == nil {
+				m.update(gen, func(s *Status) { s.Friends, s.Pending = len(friends), left })
+			} else {
+				wait = max(retryAfter(err), wait)
+			}
 		}
+		timer := time.NewTimer(wait)
 		select {
 		case <-ctx.Done():
+			timer.Stop()
 			return
-		case <-time.After(time.Minute):
+		case <-timer.C:
+		case <-nudge:
+			timer.Stop()
+			// A notice can come before the request shows in the list.
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(3 * time.Second):
+			}
 		}
+	}
+}
+
+// retryAfter is how long Xbox Live asked to wait before trying again.
+func retryAfter(err error) time.Duration {
+	var re *xsocial.ResponseError
+	if errors.As(err, &re) && re.RetryAfter > 0 {
+		return re.RetryAfter + time.Second
+	}
+	return 0
+}
+
+// friendRequestNotices nudges the friend loop when the number of friend
+// requests goes up.
+type friendRequestNotices struct{ nudge chan struct{} }
+
+func (f friendRequestNotices) HandleSocialNotification(string, []string) {}
+func (f friendRequestNotices) HandleSubscriptionLost()                   {}
+func (f friendRequestNotices) HandleIncomingFriendRequestCountChange(count int) {
+	if count <= 0 {
+		return
+	}
+	select {
+	case f.nudge <- struct{}{}:
+	default:
 	}
 }
 

@@ -6,7 +6,7 @@
   outside the house, sign in a spare Xbox account (the page shows a
   microsoft.com/link code). Its friends see the server list under Play →
   Friends → Joinable Friends and join it with no change on their console;
-  friend requests are accepted within a minute. Their console connects
+  friend requests are accepted within a few minutes. Their console connects
   through Minecraft's signaling service, straight to the list or through
   Microsoft's relay servers. This replaces DNS for consoles outside, which
   Minecraft 26.62 closed. They still only see the servers open to friends

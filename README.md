@@ -337,7 +337,7 @@ Open **Settings → Friends outside the house** (owner only):
    it at microsoft.com/link and sign in with a **spare** Microsoft account
    that has an Xbox profile (not yours or a player's). From then on, a
    friend adds that gamertag as a friend in Minecraft (Play → Friends → Add
-   Friend), the panel accepts the request within a minute, and the server
+   Friend), the panel accepts the request within a few minutes, and the server
    list shows under **Joinable Friends**. Joining it opens the list of
    servers open to them, with no change on their console. Their console
    connects through Minecraft's signaling service, on UDP 19300-19319 when

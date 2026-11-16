@@ -3460,7 +3460,7 @@ function inviteText(v, name) {
   lines.push("On an Xbox, PlayStation or Switch (they can't type an address):");
   if (v.xboxGamertag) {
     lines.push(`  1. In Minecraft, go to Play, then Friends, then Add Friend, and add ${v.xboxGamertag}.`,
-      "     (It accepts friend requests within a minute.)",
+      "     (It accepts friend requests within a few minutes.)",
       `  2. "${v.listName || "Server List"}" then shows under Joinable Friends. Join it.`,
       `  3. A list of servers appears. Pick "${name}".`, "");
     lines.push("Older Minecraft (before 26.62) can also join through DNS:");
@@ -3703,7 +3703,7 @@ function renderXbox(st) {
         (st.members ? ` · ${st.members} in the server list now` : "") +
         (st.pending ? ` · ${st.pending} friend request${st.pending === 1 ? "" : "s"} waiting` : "")));
       parts.push(el("p", { class: "small" }, "How a friend joins: in Minecraft, Play → Friends → Add Friend (or the Xbox app), and add ",
-        el("strong", {}, gt), ". The panel accepts the request within a minute. The server list then shows under Joinable Friends."));
+        el("strong", {}, gt), ". The panel accepts the request within a few minutes. The server list then shows under Joinable Friends."));
       parts.push(el("div", { class: "row" }, copyButton("Copy gamertag", gt), signOut(), signIn("Use a different account")));
       break;
     case "retrying":
