@@ -28,6 +28,8 @@ import (
 	"github.com/ScottSchneck/block-party/internal/serverlist"
 	"github.com/ScottSchneck/block-party/internal/servers"
 	"github.com/ScottSchneck/block-party/internal/web"
+	"github.com/ScottSchneck/block-party/internal/xbox"
+	"github.com/df-mc/go-nethernet"
 )
 
 // version is set at build time with -ldflags "-X main.version=...".
@@ -197,6 +199,35 @@ func main() {
 	mgr.RunUpdateNotes()
 	mgr.RunHytaleKeepAlive()
 
+	// Friends tab: an Xbox account the panel signs in as shows the list to
+	// its friends as a joinable world (Settings → Friends outside the house).
+	xboxAccount := xbox.New(xbox.Options{
+		DataDir: cfg.DataDir,
+		World: func() xbox.World {
+			return xbox.World{Name: cfg.ListName, Subtitle: cfg.ListSubtitle, MaxPlayers: 30}
+		},
+	})
+	friendsTab := make(chan nethernet.Signaling, 1)
+	cfg.FriendsSignaling = friendsTab
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case l := <-xboxAccount.Links():
+				// Only the newest connection matters.
+				select {
+				case <-friendsTab:
+				default:
+				}
+				friendsTab <- l.Signaling
+			}
+		}
+	}()
+	if !cfg.NetherNet {
+		slog.Warn("NETHERNET is off: friends who join the server list from the Xbox Friends tab can't connect")
+	}
+
 	cfg.OutsideInfo = func() serverlist.Outside {
 		i := out.Info()
 		return serverlist.Outside{Enabled: i.Enabled, Host: i.Host, IP: i.IP, Consoles: i.Consoles, Open: i.Open}
@@ -220,6 +251,7 @@ func main() {
 		ListName: cfg.ListName,
 		Version:  version,
 		Outside:  out,
+		Xbox:     xboxAccount,
 		Offsite:  off,
 		Notifier: notifier,
 	}, mgr)
@@ -235,6 +267,7 @@ func main() {
 		defer wg.Done()
 		out.Run(ctx)
 	}()
+	go xboxAccount.Run(ctx)
 	go func() {
 		defer wg.Done()
 		off.Run(ctx)

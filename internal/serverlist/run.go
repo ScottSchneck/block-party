@@ -126,6 +126,9 @@ func Run(ctx context.Context, cfg *Config) error {
 		defer l.Close()
 		slog.Info("NetherNet listener ready", "webrtcUDPPorts", fmt.Sprintf("%d-%d", cfg.RTCPortMin, cfg.RTCPortMax))
 		go acceptLoop(cfg, l, "NetherNet")
+		if cfg.FriendsSignaling != nil {
+			go serveFriendsTab(ctx, cfg, listenCfg, netherConf)
+		}
 	}
 
 	<-ctx.Done()

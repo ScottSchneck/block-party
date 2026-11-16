@@ -685,11 +685,17 @@
 
         <section class="card">
           <h2>Friends on Xbox, PlayStation and Switch</h2>
-          <label class="check">
-            <input id="outside-consoles" type="checkbox">
-            <span>Let friends' consoles use this home's server list</span>
-          </label>
-          <p class="muted small">Consoles can't type a server address, so a friend changes their console's DNS to this home's address, joins a featured server such as The Hive, and lands in the list of servers open to them. This forwards the server list (19132, and 19300-19319 for newer Minecraft) and DNS (53) as well. The panel only answers the featured-server names for them; their console gets everything else from its second DNS. It works on most consoles; if one can't get online that way, the invite also explains a public alternative.</p>
+          <p class="muted small">Consoles can't type a server address. Instead, the panel signs in as an Xbox account, and that account's friends see the server list as a world they can join under <strong>Play → Friends</strong>, with no change on their console. Use a <strong>spare</strong> Microsoft account with an Xbox profile, not yours or a player's: anyone who adds it as a friend can open the list. They still only see the servers open to friends outside, and those keep their allowlist and Xbox sign-in checks.</p>
+          <div id="xbox-account"></div>
+          <p id="xbox-error" class="error" hidden></p>
+          <details class="small">
+            <summary>Older Minecraft (before 26.62): join through DNS</summary>
+            <label class="check">
+              <input id="outside-consoles" type="checkbox">
+              <span>Let friends' consoles use this home's server list through DNS</span>
+            </label>
+            <p class="muted small">A friend changes their console's DNS to this home's address and joins a featured server such as The Hive. This forwards the server list (19132, and 19300-19319 for newer Minecraft) and DNS (53). From Minecraft 26.62 consoles refuse this (error Terracotta or "try again later"); use the Xbox account above instead.</p>
+          </details>
         </section>
 
         <div class="row">

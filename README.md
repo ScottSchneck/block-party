@@ -332,11 +332,26 @@ Open **Settings → Friends outside the house** (owner only):
 
    The TCP ports and the UDP blocks are for NetherNet, which Minecraft uses
    from version 26.60.
-3. For friends on consoles, tick **Let friends' consoles use this home's
-   server list**. This forwards 19132 (UDP and TCP), UDP 19300-19319, and 53
-   (UDP and TCP). A friend
-   sets their console's primary DNS to your address and secondary DNS to
-   1.1.1.1, joins a featured server, and sees the servers open to them. The
+3. For friends on consoles, click **Sign in an Xbox account** under
+   **Friends on Xbox, PlayStation and Switch**. The page shows a code: enter
+   it at microsoft.com/link and sign in with a **spare** Microsoft account
+   that has an Xbox profile (not yours or a player's). From then on, a
+   friend adds that gamertag as a friend in Minecraft (Play → Friends → Add
+   Friend), the panel accepts the request within a minute, and the server
+   list shows under **Joinable Friends**. Joining it opens the list of
+   servers open to them, with no change on their console. Their console
+   connects through Minecraft's signaling service, on UDP 19300-19319 when
+   those are forwarded, or else through Microsoft's relay servers. Anyone
+   who adds the account can open the list, but they only see the servers
+   open to friends outside, which keep their allowlist and Xbox sign-in
+   checks. The sign-in is kept in the panel's data folder
+   (`xbox-account.json`); **Sign out** forgets it.
+
+   Before Minecraft 26.62, friends could instead set their console's DNS to
+   your address and join a featured server (under **Older Minecraft** on the
+   same page; it forwards 19132, UDP 19300-19319 and 53). From 26.62,
+   consoles refuse the list's own certificate for featured-server names
+   (error Terracotta or "try again later"), so use the Xbox account. The
    panel answers only the featured-server names for consoles outside; every
    other lookup is refused, so it can't be used as an open resolver.
 

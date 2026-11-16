@@ -497,7 +497,7 @@ function route() {
   if (next === "people") loadPeople();
   if (next === "account") loadTwo();
   else if ($("two-codes-list").textContent) { $("two-codes-list").textContent = ""; $("two-codes").hidden = true; $("two-actions").hidden = false; }
-  if (next === "outside") loadOutside(false);
+  if (next === "outside") { loadOutside(false); loadXbox(); }
   if (next === "upkeep") loadUpkeep();
   if (next === "notify") loadNotify();
   if (next === "playtime") { closeKidForm(); loadPlaytime(); }
@@ -3458,7 +3458,15 @@ function inviteText(v, name) {
     : "On a PC, phone or tablet: open Minecraft, go to Play, then Servers, then Add Server, and type",
     `  Server address: ${v.address}`, `  Port: ${v.bedrockPort || v.port}`, "");
   lines.push("On an Xbox, PlayStation or Switch (they can't type an address):");
+  if (v.xboxGamertag) {
+    lines.push(`  1. In Minecraft, go to Play, then Friends, then Add Friend, and add ${v.xboxGamertag}.`,
+      "     (It accepts friend requests within a minute.)",
+      `  2. "${v.listName || "Server List"}" then shows under Joinable Friends. Join it.`,
+      `  3. A list of servers appears. Pick "${name}".`, "");
+    lines.push("Older Minecraft (before 26.62) can also join through DNS:");
+  }
   if (v.consoles && v.consoleDNS) {
+    if (!v.xboxGamertag) lines.push("  (This works on Minecraft before 26.62 only.)");
     lines.push(`  1. In the console's network settings, set the DNS by hand: primary ${v.consoleDNS}, secondary 1.1.1.1.`,
       "  2. Restart the console, open Minecraft, go to Servers and join The Hive (or any featured server).",
       `  3. A list of servers appears instead. Pick "${name}".`,
@@ -3631,6 +3639,84 @@ $("outside-check").addEventListener("click", async (ev) => {
   await loadOutside(true);
   b.disabled = false;
 });
+
+// ---- Xbox account for friends' consoles (owner only) ----
+
+function xboxButton(text, onclick, cls) {
+  return el("button", { type: "button", class: cls || "", onclick }, text);
+}
+
+function showXboxError(err) {
+  $("xbox-error").textContent = err ? err.message : "";
+  $("xbox-error").hidden = !err;
+}
+
+async function loadXbox() {
+  try {
+    const st = await api("/api/xbox");
+    if (view !== "outside") return;
+    renderXbox(st);
+  } catch (err) { showXboxError(err); }
+}
+
+async function xboxAction(path, b) {
+  if (b) b.disabled = true;
+  try {
+    renderXbox(await post(path));
+    showXboxError(null);
+  } catch (err) { showXboxError(err); }
+  if (b) b.disabled = false;
+}
+
+function copyButton(label, text) {
+  const b = xboxButton(label, async () => {
+    try { await navigator.clipboard.writeText(text); b.textContent = "Copied"; } catch (_) { b.textContent = text; }
+    setTimeout(() => { b.textContent = label; }, 2000);
+  });
+  return b;
+}
+
+function renderXbox(st) {
+  const box = $("xbox-account");
+  const parts = [];
+  const gt = st.gamertag || "the account";
+  const signIn = (label) => { const b = xboxButton(label, () => xboxAction("/api/xbox/sign-in", b), "primary"); return b; };
+  const signOut = () => { const b = xboxButton("Sign out", () => {
+    if (confirm(`Sign out ${gt}? Friends' consoles won't see the server list until an account is signed in again.`)) xboxAction("/api/xbox/sign-out", b);
+  }); return b; };
+  switch (st.state) {
+    case "code": {
+      const until = new Date(st.codeExpires).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+      parts.push(el("p", {}, "On any phone or computer, go to ",
+        el("a", { href: st.url, target: "_blank", rel: "noopener" }, st.url.replace(/^https?:\/\//, "")),
+        ", enter the code ", el("strong", { class: "mono" }, st.code),
+        `, and sign in with the spare account. The code works until ${until}.`));
+      parts.push(el("div", { class: "row" }, copyButton("Copy code", st.code), xboxButton("Cancel", () => xboxAction("/api/xbox/cancel"))));
+      break;
+    }
+    case "starting":
+      parts.push(fact(true, st.gamertag ? `Signed in as ${st.gamertag}. Putting the server list on its friends' list…` : "Signed in. Putting the server list on the account's friends' list…"));
+      break;
+    case "online":
+      parts.push(fact(true, `Friends of ${gt} can join the server list from Play → Friends.`));
+      parts.push(el("p", { class: "muted small" }, `${st.friends} friend${st.friends === 1 ? "" : "s"}` +
+        (st.members ? ` · ${st.members} in the server list now` : "") +
+        (st.pending ? ` · ${st.pending} friend request${st.pending === 1 ? "" : "s"} waiting` : "")));
+      parts.push(el("p", { class: "small" }, "How a friend joins: in Minecraft, Play → Friends → Add Friend (or the Xbox app), and add ",
+        el("strong", {}, gt), ". The panel accepts the request within a minute. The server list then shows under Joinable Friends."));
+      parts.push(el("div", { class: "row" }, copyButton("Copy gamertag", gt), signOut(), signIn("Use a different account")));
+      break;
+    case "retrying":
+      parts.push(fact(false, `${st.gamertag ? st.gamertag + " couldn't" : "The account couldn't"} get online: ${st.error || "unknown error"}. Trying again ${st.retryAt ? "at " + new Date(st.retryAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "soon"}.`));
+      parts.push(el("div", { class: "row" }, signOut(), signIn("Sign in again")));
+      break;
+    default:
+      if (st.error) parts.push(fact(false, st.error));
+      parts.push(el("div", { class: "row" }, signIn("Sign in an Xbox account")));
+  }
+  // Check marks go in a list, like the other facts on the page.
+  box.replaceChildren(...parts.map((p) => p.tagName === "LI" ? el("ul", { class: "checklist" }, p) : p));
+}
 
 // ---- activity ----
 
@@ -3894,6 +3980,7 @@ function enterApp(st) {
     setInterval(loadJoinInfo, 30 * 60 * 1000),
     setInterval(loadMyTime, 60 * 1000),
     setInterval(() => { if (signedIn && view === "outside" && !document.hidden) loadOutside(false); }, 10000),
+    setInterval(() => { if (signedIn && view === "outside" && !document.hidden) loadXbox(); }, 3000),
   ];
   if (me.owner && !st.setupDone && !location.hash.startsWith("#/guide")) location.hash = "#/guide";
   else route();

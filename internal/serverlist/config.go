@@ -10,6 +10,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/df-mc/go-nethernet"
 )
 
 // Config holds every setting for the console server list. LoadConfig reads it
@@ -89,6 +91,10 @@ type Config struct {
 	// (the panel's outside access settings). It's asked each time, so
 	// changes apply straight away.
 	OutsideInfo func() Outside
+	// FriendsSignaling, when set, delivers each connection the panel's Xbox
+	// account makes to Minecraft's signaling service; the list listens on it
+	// so friends of the account can join from the Friends tab.
+	FriendsSignaling <-chan nethernet.Signaling
 
 	// OnPick, when set, is called when a player picks a server from the
 	// menu, just before they're sent there. verified says whether their

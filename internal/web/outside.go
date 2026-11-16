@@ -9,6 +9,7 @@ import (
 
 	"github.com/ScottSchneck/block-party/internal/outside"
 	"github.com/ScottSchneck/block-party/internal/servers"
+	"github.com/ScottSchneck/block-party/internal/xbox"
 )
 
 // Friends outside the house. The owner sets it up (the address friends use,
@@ -126,12 +127,17 @@ type serverOutsideView struct {
 	Consoles bool   `json:"consoles"`
 	// ConsoleDNS is the address friends' consoles use as their DNS.
 	ConsoleDNS string `json:"consoleDNS,omitempty"`
-	UPnP       bool   `json:"upnp"`
-	Opened     bool   `json:"opened"` // the router opened the port
-	PortError  string `json:"portError,omitempty"`
-	Shared     bool   `json:"shared"`
-	Owner      string `json:"owner"`
-	Java       bool   `json:"java"`
+	// XboxGamertag is the panel's Xbox account friends' consoles add to join
+	// from the Friends tab, while it's signed in; ListName is the world they
+	// look for there.
+	XboxGamertag string `json:"xboxGamertag,omitempty"`
+	ListName     string `json:"listName,omitempty"`
+	UPnP         bool   `json:"upnp"`
+	Opened       bool   `json:"opened"` // the router opened the port
+	PortError    string `json:"portError,omitempty"`
+	Shared       bool   `json:"shared"`
+	Owner        string `json:"owner"`
+	Java         bool   `json:"java"`
 	// JavaConsoles: a Java server consoles can join too (same port, UDP).
 	JavaConsoles bool `json:"javaConsoles,omitempty"`
 	Hytale       bool `json:"hytale,omitempty"`
@@ -162,6 +168,10 @@ func (s *Server) outsideView(srv *servers.Server, st outside.Status) serverOutsi
 	v.ConsoleDNS = st.PublicIP
 	if st.AddressIP != "" {
 		v.ConsoleDNS = st.AddressIP
+	}
+	if x := s.xbox.Status(); x.Gamertag != "" && (x.State == xbox.StateOnline || x.State == xbox.StateStarting || x.State == xbox.StateRetrying) {
+		v.XboxGamertag = x.Gamertag
+		v.ListName = s.opts.ListName
 	}
 	if ss.Outside {
 		v.Problem = srv.OutsideProblem()

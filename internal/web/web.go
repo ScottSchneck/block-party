@@ -37,6 +37,7 @@ import (
 	"github.com/ScottSchneck/block-party/internal/offsite"
 	"github.com/ScottSchneck/block-party/internal/outside"
 	"github.com/ScottSchneck/block-party/internal/servers"
+	"github.com/ScottSchneck/block-party/internal/xbox"
 )
 
 //go:embed static
@@ -54,6 +55,10 @@ type Options struct {
 	// Outside is outside access (friends outside the house). Tests may
 	// leave it nil; the panel then makes one that isn't running.
 	Outside *outside.Manager
+	// Xbox is the Xbox account friends' consoles join through from the
+	// Friends tab. Tests may leave it nil; the panel then makes one that
+	// isn't running.
+	Xbox *xbox.Manager
 	// Offsite copies backups elsewhere; tests may leave it nil (one that
 	// isn't running is made).
 	Offsite *offsite.Manager
@@ -69,6 +74,7 @@ type Server struct {
 	auth     *auth.Store
 	activity *activity.Log
 	out      *outside.Manager
+	xbox     *xbox.Manager
 	off      *offsite.Manager
 	notifier *notify.Notifier
 	log      *slog.Logger
@@ -107,6 +113,10 @@ func New(opts Options, mgr *servers.Manager) (*Server, error) {
 	if s.out == nil {
 		local, _ := netip.ParseAddr(opts.HostIP)
 		s.out = outside.New(outside.Options{DataDir: opts.DataDir, LocalIP: local, ListPort: 19132, Servers: OutsideServers(mgr)})
+	}
+	s.xbox = opts.Xbox
+	if s.xbox == nil {
+		s.xbox = xbox.New(xbox.Options{DataDir: opts.DataDir})
 	}
 	code, usesOld, err := store.EnsureSetupCode()
 	if err != nil {
@@ -208,6 +218,7 @@ func (s *Server) routes() http.Handler {
 	s.backupRoutes(mux)
 	s.peopleRoutes(mux)
 	s.outsideRoutes(mux)
+	s.xboxRoutes(mux)
 	s.addonRoutes(mux)
 	s.pluginRoutes(mux)
 	s.hytaleRoutes(mux)
