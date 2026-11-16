@@ -98,16 +98,24 @@ func Run(ctx context.Context, cfg *Config) error {
 		if err := startSignaling(cfg, handler); err != nil {
 			return fmt.Errorf("NetherNet join endpoint could not start: %w", err)
 		}
-		n := minecraft.NetherNet{
-			Signaling: handler,
-			ListenConfig: nethernet.ListenConfig{
-				Log:                 slog.Default().With("src", "nethernet"),
-				API:                 webrtcAPI(cfg),
-				DisableTrickleICE:   true,
-				AllowAnonymous:      cfg.AuthOff,
-				IssueServerIdentity: identityIssuer(key),
-				VerifyClientToken:   verifyOfferIdentity,
-			},
+		netherConf := nethernet.ListenConfig{
+			Log:                  slog.Default().With("src", "nethernet"),
+			API:                  webrtcAPI(cfg),
+			DisableTrickleICE:    true,
+			AllowAnonymous:       cfg.AuthOff,
+			IssueServerIdentity:  identityIssuer(key),
+			VerifyClientIdentity: verifyOfferIdentity,
+		}
+		n := minecraft.NetherNet{Signaling: handler, ListenConfig: netherConf}
+		if cfg.LANDiscovery {
+			lan, err := startLANDiscovery(ctx, cfg, listenCfg, netherConf)
+			if err != nil {
+				// Not fatal: consoles can still reach the list through a
+				// featured server (DNS) or the older LAN search.
+				slog.Warn("LAN Games on newer consoles is off: could not listen for LAN discovery", "udpPort", lanDiscoveryPort, "error", err)
+			} else {
+				defer lan.Close()
+			}
 		}
 		l, err := listenWithRetry(ctx, "NetherNet", func() (*minecraft.Listener, error) {
 			return listenCfg.ListenNetwork(n, handler.NetworkID())

@@ -51,6 +51,10 @@ type Config struct {
 	ExtraSignalingPorts []int
 	RakNet              bool
 	NetherNet           bool
+	// LANDiscovery answers consoles looking for games on the home network
+	// over NetherNet's LAN discovery (UDP 7551), so the list shows under
+	// Friends → LAN Games on Minecraft 26.60 and later.
+	LANDiscovery bool
 
 	RTCPortMin uint16
 	RTCPortMax uint16
@@ -180,6 +184,7 @@ func LoadConfig() (*Config, error) {
 		AuthOff:        envBool("AUTH_OFF", false),
 		RequireSignIn:  envBool("REQUIRE_SIGN_IN", false),
 		PlayerServers:  envBool("PLAYER_SERVERS", true),
+		LANDiscovery:   envBool("LAN_DISCOVERY", true),
 	}
 
 	var err error

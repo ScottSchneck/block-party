@@ -8,6 +8,7 @@ import (
 	"net/netip"
 	"regexp"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -42,7 +43,7 @@ func handleSession(cfg *Config, l *minecraft.Listener, conn *minecraft.Conn, tra
 	signedIn := "not checked (AUTH_OFF)"
 	var check signIn
 	if !cfg.AuthOff {
-		check = checkSignIn(loginPayload(conn.LocalAddr(), conn.RemoteAddr()), sharedVerifier.get(), transport == "NetherNet")
+		check = checkSignIn(loginPayload(conn.LocalAddr(), conn.RemoteAddr()), sharedVerifier.get(), strings.HasPrefix(transport, "NetherNet"))
 		signedIn = check.String()
 	}
 	log.Info("console connected to the server list",
@@ -167,7 +168,7 @@ func handleSession(cfg *Config, l *minecraft.Listener, conn *minecraft.Conn, tra
 			// A console that came over NetherNet joins over NetherNet, which
 			// some servers take on another port.
 			port := target.Port
-			if transport == "NetherNet" && target.NetherNetPort != 0 {
+			if strings.HasPrefix(transport, "NetherNet") && target.NetherNetPort != 0 {
 				port = target.NetherNetPort
 			}
 			log.Info("player picked a server; sending the console there",

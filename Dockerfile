@@ -48,7 +48,9 @@ VOLUME ["/config", "/data"]
 # 19134-19199 = game servers the panel runs (one pair of ports each)
 # 49152-50999/udp = Bedrock NetherNet gameplay for those servers
 # 19300-19399/udp = the list's own NetherNet gameplay, only used when NetherNet is on
-EXPOSE 8443/tcp 53/udp 53/tcp 19132/udp 19132/tcp 19134-19199/udp 19134-19199/tcp 49152-50999/udp 19300-19399/udp
+# 7551/udp = LAN Games search from Minecraft 26.60 and later (broadcast, so it
+#            needs the container on its own IP, such as Unraid's br0)
+EXPOSE 8443/tcp 53/udp 53/tcp 19132/udp 19132/tcp 19134-19199/udp 19134-19199/tcp 49152-50999/udp 19300-19399/udp 7551/udp
 # Game servers get time to save their worlds when the container stops; give
 # the container at least STOP_TIMEOUT (30s) plus a little with --stop-timeout.
 STOPSIGNAL SIGTERM

@@ -1,0 +1,101 @@
+package serverlist
+
+import (
+	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"log/slog"
+	"net"
+	"strconv"
+	"testing"
+	"time"
+
+	"github.com/df-mc/go-nethernet"
+	"github.com/df-mc/go-nethernet/discovery"
+	"github.com/sandertv/gophertunnel/minecraft"
+)
+
+// A console on Minecraft 26.60 or later finds the list under LAN Games
+// through LAN discovery on UDP 7551, and joins it over the same channel.
+func TestLANGamesDiscoveryAndJoin(t *testing.T) {
+	cfg := &Config{ListName: "Family Servers", ListSubtitle: "Pick a server", AuthOff: true, DataDir: t.TempDir(),
+		MenuTitle: "Pick a server", RTCPortMin: 0, RTCPortMax: 0}
+	key, err := loadOrCreateIdentityKey(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	listenCfg := minecraft.ListenConfig{AuthenticationDisabled: true, StatusProvider: minecraft.NewStatusProvider(cfg.ListName, cfg.ListSubtitle), MaximumPlayers: 100}
+	conf := nethernet.ListenConfig{API: webrtcAPI(cfg), DisableTrickleICE: true, AllowAnonymous: true,
+		IssueServerIdentity: identityIssuer(key), VerifyClientIdentity: verifyOfferIdentity}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	l, err := startLANDiscovery(ctx, cfg, listenCfg, conf)
+	if err != nil {
+		t.Skipf("can't listen on UDP %d here: %v", lanDiscoveryPort, err)
+	}
+	defer l.Close()
+
+	// The console's search, sent to this machine instead of broadcast.
+	console, err := discovery.ListenConfig{BroadcastAddress: &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: lanDiscoveryPort}, Log: slog.Default()}.Listen("127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer console.Close()
+	var id uint64
+	var card discovery.ServerData
+	for id == 0 && ctx.Err() == nil {
+		for nid, data := range console.Responses() {
+			if err := card.UnmarshalBinary(data); err == nil {
+				id = nid
+			}
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if id == 0 {
+		t.Fatal("the list didn't answer the LAN search")
+	}
+	if card.LevelName != "Family Servers" || card.ServerName != "Pick a server" || card.ConnectionType != 4 ||
+		!card.AcceptsOnlineAuth || card.Nonce == "" || card.Version == "" || card.Protocol == 0 {
+		t.Errorf("LAN card: %+v", card)
+	}
+
+	// Picking it: the connection is set up over the LAN channel, with the
+	// server identity the HTTP route uses. (The Minecraft login on top is the
+	// same as every other way in; gophertunnel's own test client can't do it
+	// over LAN because it puts the bare network ID in the login's server
+	// address, which gophertunnel's listener rejects.)
+	nd := nethernet.Dialer{Identity: mustSelfSigned(t)}
+	conn, err := nd.DialContext(ctx, strconv.FormatUint(id, 10), console)
+	if err != nil {
+		t.Fatalf("joining over LAN: %v", err)
+	}
+	conn.Close()
+}
+
+func mustSelfSigned(t *testing.T) *nethernet.Identity {
+	k, err := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := nethernet.SelfSignedIdentity(k, "https://authorization.franchise.minecraft-services.net/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return id
+}
+
+// The Minecraft listener's status pushes keep the list's card, updating only
+// the player count.
+func TestLANCardKeepsVersionOnStatusUpdates(t *testing.T) {
+	d, err := discovery.ListenConfig{}.Listen("127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	s := &lanSignaling{Listener: d, card: lanServerData(&Config{ListName: "Family Servers", ListSubtitle: "Pick"})}
+	s.PongData([]byte("MCPE;Family Servers;2225;1.26.60;3;100;123;Pick;Adventure;2;19132;19132;0;"))
+	if s.card.PlayerCount != 3 || s.card.Version == "" || s.card.LevelName != "Family Servers" || s.card.Nonce == "" {
+		t.Errorf("card after a status push: %+v", s.card)
+	}
+}

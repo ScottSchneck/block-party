@@ -238,9 +238,12 @@ then remove and re-run the container. To build it yourself instead, run
 `docker build -t block-party .` in this folder.
 
 **At home, try LAN Games first.** Consoles on the same network may find the
-list by themselves under **Friends → LAN Games** (a PS5 does), with no DNS
-change at all. Otherwise, set the console's DNS to the container's IP,
-**restart the console**, open Minecraft, and join any featured server.
+list by themselves under **Friends → LAN Games**, with no DNS change at all.
+Minecraft 26.60 and later look for LAN games on UDP 7551, so the container
+needs its own IP on your network (Unraid's `br0`, or host networking): LAN
+searches are broadcasts, which don't get through Docker's port mapping.
+Otherwise, set the console's DNS to the container's IP, **restart the
+console**, open Minecraft, and join any featured server.
 
 ### People and roles
 
@@ -776,6 +779,7 @@ apply without a restart.
 | `DNS_ANSWER_INTERNET` | `false` | Older setting: always answer the featured names for consoles on the internet (with `PUBLIC_IP`). The **Friends on Xbox, PlayStation and Switch** switch does this now |
 | `CONNECTION` | `both` | `raknet`, `nethernet` or `both` |
 | `NETHERNET_NAMES` | empty | With `both`, offer NetherNet only for these names |
+| `LAN_DISCOVERY` | `true` | Answer LAN searches from Minecraft 26.60 and later on UDP 7551, so the list shows under LAN Games |
 | `SIGNALING` | `http` | NetherNet join endpoint: `http`, `auto` (HTTPS and HTTP) or `tls`. Consoles refuse the list's own certificate (error Terracotta), so leave it on `http` |
 | `EXTRA_SIGNALING_PORTS` | `80,443` | More TCP ports for the NetherNet endpoint; `none` for none |
 | `RTC_PORT_MIN`, `RTC_PORT_MAX` | `19300`, `19319` | UDP ports for the list's NetherNet connections |

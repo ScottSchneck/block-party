@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
+	"github.com/df-mc/go-nethernet"
 	"github.com/sandertv/gophertunnel/minecraft/protocol/login"
 )
 
@@ -67,8 +68,11 @@ func tokenClaims(token string) map[string]any {
 // never turns a console away (the game server it picks checks sign-in
 // itself); it records whether Microsoft issued the token, and returns the
 // key the offer must be signed with.
-func verifyOfferIdentity(ctx context.Context, token string) (*ecdsa.PublicKey, error) {
-	return recordOfferIdentity(ctx, token, sharedVerifier.get())
+func verifyOfferIdentity(ctx context.Context, id *nethernet.RemoteIdentity) (*ecdsa.PublicKey, error) {
+	if id == nil {
+		return nil, nil
+	}
+	return recordOfferIdentity(ctx, id.Assertion.Token, sharedVerifier.get())
 }
 
 func recordOfferIdentity(ctx context.Context, token string, v *oidc.IDTokenVerifier) (*ecdsa.PublicKey, error) {

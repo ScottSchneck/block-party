@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- **The server list shows under LAN Games again on Minecraft 26.60 and
+  later.** Newer consoles look for LAN games a new way (UDP 7551), so the
+  list stopped appearing under Friends → LAN Games; it answers there now,
+  and consoles join it over the home network without certificates or DNS.
+  Needs the container on its own IP (Unraid's `br0`). Turn it off with
+  `LAN_DISCOVERY=false`.
+- Updated the NetherNet library (go-nethernet 1.0.27) and the WebRTC
+  libraries under it.
+
 ## 1.7.0
 
 - **A Mods tab for Fabric, Forge and NeoForge servers.** It works like the
