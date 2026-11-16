@@ -87,6 +87,7 @@ func (c candidateLogger) NotifySignal(sig *nethernet.Signal) bool {
 	case nethernet.SignalTypeCandidate:
 		slog.Debug("LAN console offered an address", "connectionID", sig.ConnectionID, "candidate", sig.Data)
 	case nethernet.SignalTypeOffer:
+		slog.Debug("LAN console's connection offer", "connectionID", sig.ConnectionID, "sdp", sig.Data)
 		for _, line := range strings.Split(sig.Data, "\n") {
 			if line = strings.TrimSpace(line); strings.HasPrefix(line, "a=candidate:") {
 				slog.Debug("LAN console offered an address", "connectionID", sig.ConnectionID, "candidate", strings.TrimPrefix(line, "a="))
@@ -105,6 +106,7 @@ func (s *lanSignaling) Signal(ctx context.Context, sig *nethernet.Signal) error 
 		return err
 	}
 	if sig.Type == nethernet.SignalTypeAnswer {
+		slog.Debug("the list's answer to a LAN console", "connectionID", sig.ConnectionID, "sdp", sig.Data)
 		n := 0
 		for _, line := range strings.Split(sig.Data, "\n") {
 			if line = strings.TrimSpace(line); strings.HasPrefix(line, "a=candidate:") {
@@ -144,6 +146,7 @@ func (s *lanSignaling) PongData(b []byte) {
 func lanWebRTCAPI(cfg *Config) *webrtc.API {
 	var s webrtc.SettingEngine
 	s.SetICEMulticastDNSMode(ice.MulticastDNSModeQueryOnly)
+	s.LoggerFactory = pionLogs{}
 	if err := s.SetEphemeralUDPPortRange(cfg.RTCPortMin, cfg.RTCPortMax); err != nil {
 		slog.Warn("could not limit WebRTC ports", "error", err)
 	}

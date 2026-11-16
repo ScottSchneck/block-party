@@ -160,7 +160,12 @@ func acceptLoop(cfg *Config, l *minecraft.Listener, transport string) {
 	for {
 		c, err := l.Accept()
 		if err != nil {
-			slog.Warn(transport+" listener stopped", "error", err)
+			if errors.Is(err, net.ErrClosed) {
+				// The panel is shutting down or restarting.
+				slog.Info(transport + " listener closed")
+			} else {
+				slog.Warn(transport+" listener stopped", "error", err)
+			}
 			return
 		}
 		go handleSession(cfg, l, c.(*minecraft.Conn), transport)
